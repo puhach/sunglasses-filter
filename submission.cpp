@@ -77,8 +77,10 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 {
 	CV_Assert(!image.empty());
 
+	// Histogram equalization considerably improves eye detection
 	cv::Mat imageGray;
 	cv::cvtColor(image, imageGray, cv::COLOR_BGR2GRAY);
+	cv::equalizeHist(imageGray, imageGray);
 
 	this->cascadeClassifier.detectMultiScale(imageGray, rects, this->scaleFactor, this->minNeighbors, this->flags, this->minSize, this->minSize);
 }	// detect
