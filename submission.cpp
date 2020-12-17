@@ -290,6 +290,21 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::imshow("test", mask1F);
 	cv::waitKey();
 
+	// Remove the alpha channel 
+	channels.pop_back();
+	cv::Mat3f sunglassesResized3F;
+	cv::merge(channels, sunglassesResized3F);
+
+	float transparency = 0.5;	// TODO: add a constructor parameter
+	mask1F *= transparency;
+
+	cv::Mat3f mask3F;
+	cv::merge(std::vector<cv::Mat1f>{ mask1F, mask1F, mask1F }, mask3F);
+
+	// Make the sunglasses semi-transparent
+	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F);
+	
+
 }	// fitSunglasses
 
 
