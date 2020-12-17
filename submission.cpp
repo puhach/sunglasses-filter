@@ -229,15 +229,18 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::Mat4f sunglassesF;
 	this->sunglasses.convertTo(sunglassesF, CV_32F, 1/255.0);
 
-	
+	// TODO: convert the reflection to float just once in the constructor
+	cv::Mat1f reflectionF;
+	this->reflection.convertTo(reflectionF, CV_32F, 1 / 255.0);
+
 	// As sunglasses are larger than the eye region, to fit them properly we need to know the size of the face at the level of eyes. 
 	// The eyes are supposed to be horizontally centered in the face, so the real face size can't be larger than the eye region width + 
 	// two minimal distances from the eyes to the face boundaries. By finding the ratio of the sunglasses width and the face width, 
 	// we can compute the scaling factor to resize the sunglasses image preserving the aspect ratio. Although it's unlikely to happen, 
 	// but the resized height of the sunglasses must not go beyond the face height.
-	double fx = 1.0 * (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses.cols;
-	double fy = 1.0 * (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses.rows;
-	//double fx = 1.0*face.cols / this->sunglasses.cols;	// TODO: introduce a fit factor
+	double fx = (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses.cols;
+	double fy = (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses.rows;
+	//double fx = 1.0*face.cols / this->sunglasses.cols;	// TODO: introduce a fit factor?
 	//double fy = 1.0 * face.rows / this->sunglasses.rows;
 	double f = std::min(fx, fy);	// make sure glasses do not exceed the face boundaries
 
@@ -245,21 +248,39 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::Mat4f sunglassesResizedF;
 	//cv::resize(sunglassesF, sunglassesResizedF, sunglassesRect.size());
 	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
+	CV_Assert(sunglassesResizedF.cols > 0 && sunglassesResizedF.rows > 0);
 
+	// Resize the reflection image to match the size of sunglasses
+	cv::resize(reflectionF, reflectionF, sunglassesResizedF.size());
+	
+	/*fx = static_cast<double>(reflectionF.cols) / sunglassesResizedF.cols;
+	fy = static_cast<double>(reflectionF.rows) / sunglassesResizedF.rows;
+	f = std::max(fx, fy);
+	cv::resize(reflectionF, reflectionF, cv::Size(), f, f);
+	CV_Assert(reflectionF.cols >= sunglassesResizedF.cols && reflectionF.rows >= sunglassesResizedF.rows);
 
-	//cv::imshow("test", sunglassesResizedF);
-	//cv::waitKey();
+	// Crop the reflection image
+	reflectionF = reflectionF(cv::Rect(0, 0, sunglassesResizedF.cols, sunglassesResizedF.rows));*/
 
+	cv::imshow("test", reflectionF);
+	cv::waitKey();
 
+	/*
 	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
 	//cv::Size dsz = cv::max( sunglassesResizedF.size() - eyeRegion.size(), cv::Size(0,0));
 	cv::Point dsz = sunglassesResizedF.size() - eyeRegion.size();
 	//cv::Rect sunglassesRect(eyeRegion.x - dsz.width/2, eyeRegion.y-dsz.height/2, sunglassesResizedF.cols, sunglassesResizedF.rows);
 	cv::Rect sunglassesRect(eyeRegion.tl() - dsz/2, sunglassesResizedF.size());
 	CV_Assert(eyeRegion.x >= 0 && eyeRegion.y >= 0 && eyeRegion.x + eyeRegion.width < face.cols && eyeRegion.y + eyeRegion.height < face.rows);
-	
-	// Obtain the sunglasses ROI and scale its pixel values to 0..1 
-	cv::Mat3b sunglassesROIB = face(sunglassesRect);
+	*/
+
+	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
+	cv::Mat3b sunglassesROIB = face(eyeRegion);
+	cv::Point dsz = (sunglassesResizedF.size() - eyeRegion.size())/2;
+	sunglassesROIB.adjustROI(dsz.y, dsz.y, dsz.x, dsz.x);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
+	//cv::Mat3b sunglassesROIB = face(sunglassesRect);
+
+	// Scale the pixel values to 0..1
 	cv::Mat3f sunglassesROIF;
 	sunglassesROIB.convertTo(sunglassesROIF, CV_32F, 1 / 255.0);
 
