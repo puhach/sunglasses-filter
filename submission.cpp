@@ -57,6 +57,7 @@ public:
 
 void ProportionalEyeDetector::detect(const cv::Mat& face, std::vector<cv::Rect>& rects)
 {
+	// Find the eye regions using typical face proportions
 	int x1 = face.cols / 5, x2 = 3*face.cols/5;
 	int y = face.rows / 3;
 	int h = face.rows / 8;
@@ -128,9 +129,9 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 class SunglassesFilter : public ImageFilter
 {
 public:
-	SunglassesFilter(const std::string& fileName,
-		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml"),
-		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"));
+	SunglassesFilter(const std::string& fileName,		
+		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
+		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml"));
 
 	// TODO: implement copy/move semantics
 
@@ -139,14 +140,17 @@ public:
 	virtual cv::Mat apply(const cv::Mat& image) override;
 
 private:
-	std::unique_ptr<Detector> faceDetector, eyeDetector;
+
+	void fitSunglasses(cv::Mat &face, const cv::Rect &eyeRegion);
+
+	std::unique_ptr<Detector> eyeDetector, faceDetector;
 	//cv::CascadeClassifier faceClassifier, eyeClassifier;
 	cv::Mat sunglasses;
 };	// SunglassesFilter
 
-SunglassesFilter::SunglassesFilter(const std::string& fileName, std::unique_ptr<Detector> faceDetector, std::unique_ptr<Detector> eyeDetector)
-	: faceDetector(faceDetector ? std::move(faceDetector) : throw std::runtime_error("The face detector object is a null pointer."))
-	, eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::runtime_error("The eye detector is a null pointer."))
+SunglassesFilter::SunglassesFilter(const std::string& fileName, std::unique_ptr<Detector> eyeDetector, std::unique_ptr<Detector> faceDetector)
+	: eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::runtime_error("The eye detector is a null pointer."))
+	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::runtime_error("The face detector object is a null pointer."))
 	//, eyeDetector("./haarcascades/haarcascade_eye_tree_eyeglasses.xml")
 	, sunglasses(cv::imread(fileName, cv::IMREAD_UNCHANGED))
 {
@@ -166,7 +170,7 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		std::vector<cv::Rect> eyeRects;
 		this->eyeDetector->detect(face, eyeRects);
 
-		
+		/*
 		//if (eyeRects.empty())
 		//	continue;
 
@@ -182,7 +186,7 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 			//cv::imshow("face", face);
 			//cv::waitKey(10);
 		}
-		
+		*/
 
 		// Eyes are expected to be in the top part of the face
 		auto eyesEnd = std::remove_if(eyeRects.begin(), eyeRects.end(), [&face](const cv::Rect& r) {
@@ -201,16 +205,22 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		if (eyeRects[0].y + eyeRects[0].height < eyeRects[1].y || eyeRects[0].y > eyeRects[1].y + eyeRects[1].height)
 			continue;
 
-		/*int x1 = std::min(eyeRects[0].x, eyeRects[1].x);
-		int x2 = std::max(eyeRects[0].x + eyeRects[0].width, eyeRects[1].x + eyeRects[1].width);
-		int y1 = std::min(eyeRects[0].y, eyeRects[1].y);
-		int y2 = std::max(eyeRects[0].y+eyeRects[0].height, eyeRects[1].y+eyeRects[1].height);*/
+		/*
 		cv::Rect eyeRegion = eyeRects[0] | eyeRects[1];	// minimum area rectangle containing both eye rectangles
+		
+		// Compute the sunglasses region from the eye region
+		int sunglassesHeight = static_cast<int>(eyeRegion.height / (eyeRegion.width + 1e-5) * face.cols);
+		cv::Rect sunglassesRegion(0, eyeRegion.y+(eyeRegion.height-sunglassesHeight)/2, face.cols, sunglassesHeight);
+		*/
 
+		fitSunglasses(face, eyeRects[0] | eyeRects[1]);	// minimum area rectangle containing both eye rectangles
+
+		/*
 		//cv::rectangle(face, cv::Rect(x1, y1, x2 - x1, y2 - y1), cv::Scalar(0, 255, 0));
-		cv::rectangle(face, eyeRegion, cv::Scalar(0, 255, 0));
+		cv::rectangle(face, sunglassesRegion, cv::Scalar(0, 255, 0));
 		cv::imshow("face", face);
 		cv::waitKey(10);
+		*/
 	}	// faces
 }	// applyInPlace
 
@@ -221,17 +231,55 @@ cv::Mat SunglassesFilter::apply(const cv::Mat& image)
 	return imageCopy;
 }	// apply
 
+void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
+{
+	CV_Assert(face.channels() == 3);
+	CV_Assert(eyeRegion.width <= face.cols && eyeRegion.height <= face.rows);
+	
+	// TODO: convert sunglasses to float just once in the ctor
+	cv::Mat4f sunglassesF;
+	this->sunglasses.convertTo(sunglassesF, CV_32F, 1/255.0);
+
+
+	// Compute the sunglasses region from the eye region
+	/*int sunglassesHeight = static_cast<int>(face.cols / (eyeRegion.width + 1e-5) * eyeRegion.height);
+	cv::Rect sunglassesRect(0, eyeRegion.y + (eyeRegion.height - sunglassesHeight) / 2, face.cols, sunglassesHeight);
+	*/
+
+	// As sunglasses are larger than the eye region, to fit them properly we need to know the size of the face at the level of eyes. 
+	// The eyes are supposed to be horizontally centered in the face, so the real face size can't be larger than the eye region width + 
+	// two minimal distances to the face boundary. By finding the ratio of the sunglasses width and the face width, we can compute 
+	// the scaling factor to resize the sunglasses image preserving the aspect ratio. Although it's unlikely to happen, but the resized 
+	// height of the sunglasses must not go beyond the face height.
+	double fx = 1.0 * (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses.cols;
+	double fy = 1.0 * (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses.rows;
+	//double fx = 1.0*face.cols / this->sunglasses.cols;	// TODO: introduce a fit factor
+	//double fy = 1.0 * face.rows / this->sunglasses.rows;
+	double f = std::min(fx, fy);	// make sure glasses do not exceed the face boundaries
+
+	// Resize the image of sunglasses preserving the aspect ratio
+	cv::Mat4f sunglassesResizedF;
+	//cv::resize(sunglassesF, sunglassesResizedF, sunglassesRect.size());
+	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
+
+
+	cv::imshow("test", sunglassesResizedF);
+	cv::waitKey();
+
+
+}	// fitSunglasses
+
 
 int main(int argc, char* argv[])
 {
 	try
 	{
 		//SunglassesFilter filter("./images/sunglass.png");
-		auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
+		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
 		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
-		SunglassesFilter filter("./images/sunglass.png", std::move(faceDetector), std::move(eyeDetector));
+		SunglassesFilter filter("./images/sunglass.png", std::move(eyeDetector));
 
-		/*
+		
 		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
 		//cv::Mat imGlasses = cv::imread("./images/sunglass.png", cv::IMREAD_UNCHANGED);
 		//CV_Assert(imGlasses.channels() == 4);
@@ -242,7 +290,7 @@ int main(int argc, char* argv[])
 		cv::Mat imOut = filter.apply(imInput);
 		cv::imshow("output", imOut);
 		cv::waitKey();
-		*/
+		
 
 		cv::VideoCapture cap(0);
 		while (cap.isOpened())
