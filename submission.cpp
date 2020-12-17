@@ -129,25 +129,32 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		std::vector<cv::Rect> eyeRects;
 		this->eyeDetector->detect(face, eyeRects);
 
-		/*
-		if (eyeRects.empty())
-			continue;
+		
+		//if (eyeRects.empty())
+		//	continue;
 
-		int x1 = face.cols, x2 = 0, y1 = face.rows, y2 = 0;
+		////int x1 = face.cols, x2 = 0, y1 = face.rows, y2 = 0;
 		for (const cv::Rect& eyeRect : eyeRects)
 		{
-			x1 = std::min(x1, eyeRect.x);
-			x2 = std::max(x2, eyeRect.x);
-			y1 = std::min(y1, eyeRect.y);
-			y2 = std::max(y2, eyeRect.y);
+			//x1 = std::min(x1, eyeRect.x);
+			//x2 = std::max(x2, eyeRect.x);
+			//y1 = std::min(y1, eyeRect.y);
+			//y2 = std::max(y2, eyeRect.y);
 
 			cv::rectangle(face, eyeRect, cv::Scalar(255,0,0));
-			cv::imshow("face", face);
-			cv::waitKey(10);
+			//cv::imshow("face", face);
+			//cv::waitKey(10);
 		}
-		*/
+		
 
-		if (eyeRects.size() < 2)
+		// Eyes are expected to be in the top part of the face
+		auto eyesEnd = std::remove_if(eyeRects.begin(), eyeRects.end(), [&face](const cv::Rect& r) {
+				return r.y > face.rows / 2;
+			});
+
+		
+		//if (eyeRects.size() < 2)
+		if (eyesEnd - eyeRects.begin() < 2)
 			continue;
 
 		//if (eyeRects[0].y > eyeRects[1].y && eyeRects[0].y < eyeRects[1].y + eyeRects[1].height 
@@ -161,10 +168,11 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		int x2 = std::max(eyeRects[0].x + eyeRects[0].width, eyeRects[1].x + eyeRects[1].width);
 		int y1 = std::min(eyeRects[0].y, eyeRects[1].y);
 		int y2 = std::max(eyeRects[0].y+eyeRects[0].height, eyeRects[1].y+eyeRects[1].height);
+		
 
 		cv::rectangle(face, cv::Rect(x1, y1, x2 - x1, y2 - y1), cv::Scalar(0, 255, 0));
-		//cv::imshow("eyes", image);
-		//cv::waitKey(10);
+		cv::imshow("face", face);
+		cv::waitKey(10);
 	}	// faces
 }	// applyInPlace
 
@@ -181,6 +189,8 @@ int main(int argc, char* argv[])
 	try
 	{
 		SunglassesFilter filter("./images/sunglass.png");
+		//SunglassesFilter filter("./images/sunglass.png", std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml")
+		//	, std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml", 1.01, 5, 0, cv::Size(1,1)));
 
 		//cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
 		//cv::Mat imGlasses = cv::imread("./images/sunglass.png", cv::IMREAD_UNCHANGED);
