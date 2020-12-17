@@ -129,7 +129,7 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 class SunglassesFilter : public ImageFilter
 {
 public:
-	SunglassesFilter(const std::string& fileName,		
+	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile,
 		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
 		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml"));
 
@@ -145,19 +145,22 @@ private:
 
 	std::unique_ptr<Detector> eyeDetector, faceDetector;
 	//cv::CascadeClassifier faceClassifier, eyeClassifier;
-	cv::Mat sunglasses;
+	cv::Mat sunglasses, reflection;		// TODO: perhaps, extract the mask and convert the sunglasses image to 3F in the constructor?
 };	// SunglassesFilter
 
-SunglassesFilter::SunglassesFilter(const std::string& fileName, std::unique_ptr<Detector> eyeDetector, std::unique_ptr<Detector> faceDetector)
+SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile
+	, std::unique_ptr<Detector> eyeDetector, std::unique_ptr<Detector> faceDetector)
 	: eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::runtime_error("The eye detector is a null pointer."))
 	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::runtime_error("The face detector object is a null pointer."))
-	//, eyeDetector("./haarcascades/haarcascade_eye_tree_eyeglasses.xml")
-	, sunglasses(cv::imread(fileName, cv::IMREAD_UNCHANGED))
+	, sunglasses(cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED))
+	, reflection(cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE))
 {
 	//CV_Assert(!this->faceClassifier.empty());
 	//CV_Assert(!this->eyeClassifier.empty());
 	CV_Assert(!this->sunglasses.empty());
 	CV_Assert(this->sunglasses.channels() == 4);
+	
+	CV_Assert(!this->reflection.empty());
 }
 
 void SunglassesFilter::applyInPlace(cv::Mat& image)
@@ -194,7 +197,7 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 			});
 
 		
-		//if (eyeRects.size() < 2)
+		// There must be two eyes, otherwise we just skip this face
 		if (eyesEnd - eyeRects.begin() < 2)
 			continue;
 
@@ -205,22 +208,8 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		if (eyeRects[0].y + eyeRects[0].height < eyeRects[1].y || eyeRects[0].y > eyeRects[1].y + eyeRects[1].height)
 			continue;
 
-		/*
-		cv::Rect eyeRegion = eyeRects[0] | eyeRects[1];	// minimum area rectangle containing both eye rectangles
-		
-		// Compute the sunglasses region from the eye region
-		int sunglassesHeight = static_cast<int>(eyeRegion.height / (eyeRegion.width + 1e-5) * face.cols);
-		cv::Rect sunglassesRegion(0, eyeRegion.y+(eyeRegion.height-sunglassesHeight)/2, face.cols, sunglassesHeight);
-		*/
-
 		fitSunglasses(face, eyeRects[0] | eyeRects[1]);	// minimum area rectangle containing both eye rectangles
 
-		/*
-		//cv::rectangle(face, cv::Rect(x1, y1, x2 - x1, y2 - y1), cv::Scalar(0, 255, 0));
-		cv::rectangle(face, sunglassesRegion, cv::Scalar(0, 255, 0));
-		cv::imshow("face", face);
-		cv::waitKey(10);
-		*/
 	}	// faces
 }	// applyInPlace
 
@@ -240,17 +229,12 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::Mat4f sunglassesF;
 	this->sunglasses.convertTo(sunglassesF, CV_32F, 1/255.0);
 
-
-	// Compute the sunglasses region from the eye region
-	/*int sunglassesHeight = static_cast<int>(face.cols / (eyeRegion.width + 1e-5) * eyeRegion.height);
-	cv::Rect sunglassesRect(0, eyeRegion.y + (eyeRegion.height - sunglassesHeight) / 2, face.cols, sunglassesHeight);
-	*/
-
+	
 	// As sunglasses are larger than the eye region, to fit them properly we need to know the size of the face at the level of eyes. 
 	// The eyes are supposed to be horizontally centered in the face, so the real face size can't be larger than the eye region width + 
-	// two minimal distances to the face boundary. By finding the ratio of the sunglasses width and the face width, we can compute 
-	// the scaling factor to resize the sunglasses image preserving the aspect ratio. Although it's unlikely to happen, but the resized 
-	// height of the sunglasses must not go beyond the face height.
+	// two minimal distances from the eyes to the face boundaries. By finding the ratio of the sunglasses width and the face width, 
+	// we can compute the scaling factor to resize the sunglasses image preserving the aspect ratio. Although it's unlikely to happen, 
+	// but the resized height of the sunglasses must not go beyond the face height.
 	double fx = 1.0 * (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses.cols;
 	double fy = 1.0 * (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses.rows;
 	//double fx = 1.0*face.cols / this->sunglasses.cols;	// TODO: introduce a fit factor
@@ -263,8 +247,8 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
 
 
-	cv::imshow("test", sunglassesResizedF);
-	cv::waitKey();
+	//cv::imshow("test", sunglassesResizedF);
+	//cv::waitKey();
 
 
 	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
@@ -273,24 +257,26 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	//cv::Rect sunglassesRect(eyeRegion.x - dsz.width/2, eyeRegion.y-dsz.height/2, sunglassesResizedF.cols, sunglassesResizedF.rows);
 	cv::Rect sunglassesRect(eyeRegion.tl() - dsz/2, sunglassesResizedF.size());
 	CV_Assert(eyeRegion.x >= 0 && eyeRegion.y >= 0 && eyeRegion.x + eyeRegion.width < face.cols && eyeRegion.y + eyeRegion.height < face.rows);
-
+	
+	// Obtain the sunglasses ROI and scale its pixel values to 0..1 
 	cv::Mat3b sunglassesROIB = face(sunglassesRect);
 	cv::Mat3f sunglassesROIF;
 	sunglassesROIB.convertTo(sunglassesROIF, CV_32F, 1 / 255.0);
 
 
-	cv::imshow("test", sunglassesROIF);
-	cv::waitKey();
+	//cv::imshow("test", sunglassesROIF);
+	//cv::waitKey();
 
+	// Extract BGRA channels from the image of sunglasses
 	std::vector<cv::Mat1f> channels;
 	cv::split(sunglassesResizedF, channels);
 
 	// Obtain the alpha mask 
 	cv::Mat1f mask1F = channels[3];
-	cv::imshow("test", mask1F);
-	cv::waitKey();
+	//cv::imshow("test", mask1F);
+	//cv::waitKey();
 
-	// Remove the alpha channel 
+	// Remove the alpha channel to create a 3-channel image of sunglasses
 	channels.pop_back();
 	cv::Mat3f sunglassesResized3F;
 	cv::merge(channels, sunglassesResized3F);
@@ -298,6 +284,7 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	float transparency = 0.5;	// TODO: add a constructor parameter
 	mask1F *= transparency;
 
+	// Create a 3-channel mask to match the images
 	cv::Mat3f mask3F;
 	cv::merge(std::vector<cv::Mat1f>{ mask1F, mask1F, mask1F }, mask3F);
 
@@ -306,13 +293,13 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	
 	// Overlay the face with the sunglasses
 	mask3F.convertTo(mask3F, CV_32F, -1, +1);	// invert the mask
-	//sunglassesROIF *= mask3F;
 	cv::multiply(sunglassesROIF, mask3F, sunglassesROIF);
 	sunglassesROIF += sunglassesResized3F;
 
-	cv::imshow("test", sunglassesROIF);
-	cv::waitKey();
+	//cv::imshow("test", sunglassesROIF);
+	//cv::waitKey();
 
+	// Convert the sunglasses ROI back to match the image
 	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
 	
 }	// fitSunglasses
@@ -325,7 +312,8 @@ int main(int argc, char* argv[])
 		//SunglassesFilter filter("./images/sunglass.png");
 		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
 		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
-		SunglassesFilter filter("./images/sunglass.png", std::move(eyeDetector));
+		//auto eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml");
+		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", std::move(eyeDetector));
 
 		
 		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
