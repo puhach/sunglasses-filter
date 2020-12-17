@@ -1,6 +1,8 @@
 
 #include <iostream>
 #include <exception>
+#include <memory>
+#include <vector>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -89,22 +91,25 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 class SunglassesFilter : public ImageFilter
 {
 public:
-	SunglassesFilter(const std::string& fileName);
+	SunglassesFilter(const std::string& fileName,
+		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml"),
+		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"));
+
+	// TODO: implement copy/move semantics
 
 	virtual void applyInPlace(cv::Mat& image) override;
 
 	virtual cv::Mat apply(const cv::Mat& image) override;
 
 private:
-	HaarDetector faceDetector, eyeDetector;
+	std::unique_ptr<Detector> faceDetector, eyeDetector;
 	//cv::CascadeClassifier faceClassifier, eyeClassifier;
 	cv::Mat sunglasses;
 };	// SunglassesFilter
 
-SunglassesFilter::SunglassesFilter(const std::string& fileName)
-	: faceDetector("./haarcascades/haarcascade_frontalface_default.xml")
-	//, eyeDetector("./haarcascades/haarcascade_eye.xml", 1.02, 5, 0, cv::Size(4,0))
-	, eyeDetector("./haarcascades/haarcascade_eye.xml")
+SunglassesFilter::SunglassesFilter(const std::string& fileName, std::unique_ptr<Detector> faceDetector, std::unique_ptr<Detector> eyeDetector)
+	: faceDetector(faceDetector ? std::move(faceDetector) : throw std::runtime_error("The face detector object is a null pointer."))
+	, eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::runtime_error("The eye detector is a null pointer."))
 	//, eyeDetector("./haarcascades/haarcascade_eye_tree_eyeglasses.xml")
 	, sunglasses(cv::imread(fileName, cv::IMREAD_UNCHANGED))
 {
@@ -117,12 +122,12 @@ SunglassesFilter::SunglassesFilter(const std::string& fileName)
 void SunglassesFilter::applyInPlace(cv::Mat& image)
 {
 	std::vector<cv::Mat> faces;
-	this->faceDetector.detect(image, faces);
+	this->faceDetector->detect(image, faces);
 
 	for (/*const*/ cv::Mat& face : faces)
 	{
 		std::vector<cv::Rect> eyeRects;
-		this->eyeDetector.detect(face, eyeRects);
+		this->eyeDetector->detect(face, eyeRects);
 
 		/*
 		if (eyeRects.empty())
