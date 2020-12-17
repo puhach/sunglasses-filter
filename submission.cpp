@@ -267,6 +267,24 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::waitKey();
 
 
+	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
+	//cv::Size dsz = cv::max( sunglassesResizedF.size() - eyeRegion.size(), cv::Size(0,0));
+	cv::Point dsz = sunglassesResizedF.size() - eyeRegion.size();
+	//cv::Rect sunglassesRect(eyeRegion.x - dsz.width/2, eyeRegion.y-dsz.height/2, sunglassesResizedF.cols, sunglassesResizedF.rows);
+	cv::Rect sunglassesRect(eyeRegion.tl() - dsz/2, sunglassesResizedF.size());
+	CV_Assert(eyeRegion.x >= 0 && eyeRegion.y >= 0 && eyeRegion.x + eyeRegion.width < face.cols && eyeRegion.y + eyeRegion.height < face.rows);
+
+	cv::Mat3b sunglassesROIB = face(sunglassesRect);
+	cv::Mat3f sunglassesROIF;
+	sunglassesROIB.convertTo(sunglassesROIF, CV_32F, 1 / 255.0);
+
+
+	cv::imshow("test", sunglassesROIF);
+	cv::waitKey();
+
+	/*cv::rectangle(face, sunglassesRect, cv::Scalar(0, 255, 0));
+	cv::imshow("face", face);
+	cv::waitKey(10);*/
 }	// fitSunglasses
 
 
