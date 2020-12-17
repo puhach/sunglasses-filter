@@ -304,7 +304,17 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	// Make the sunglasses semi-transparent
 	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F);
 	
+	// Overlay the face with the sunglasses
+	mask3F.convertTo(mask3F, CV_32F, -1, +1);	// invert the mask
+	//sunglassesROIF *= mask3F;
+	cv::multiply(sunglassesROIF, mask3F, sunglassesROIF);
+	sunglassesROIF += sunglassesResized3F;
 
+	cv::imshow("test", sunglassesROIF);
+	cv::waitKey();
+
+	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
+	
 }	// fitSunglasses
 
 
