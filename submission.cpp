@@ -26,10 +26,47 @@ class Detector
 public:
 	virtual ~Detector() = default;
 
-	virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) = 0;
+	//virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) = 0;
+	virtual void detect(const cv::Mat& image, std::vector<cv::Mat>& objs);
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) = 0;
 };	// Detector
+
+void Detector::detect(const cv::Mat& image, std::vector<cv::Mat>& objs)
+{
+	std::vector<cv::Rect> rects;
+	detect(image, rects);	// virtual
+
+	objs.reserve(rects.size());
+	for (const cv::Rect& r : rects)
+	{
+		objs.push_back(image(r));
+	}
+}	// detect
+
+
+class ProportionalEyeDetector : public Detector
+{
+public:
+
+	//virtual void detect(const cv::Mat& image, std::vector<cv::Mat>& objs) override;
+
+	virtual void detect(const cv::Mat &face, std::vector<cv::Rect> &rects) override;
+};	// ProportionalEyeDetector
+
+
+void ProportionalEyeDetector::detect(const cv::Mat& face, std::vector<cv::Rect>& rects)
+{
+	int x1 = face.cols / 5, x2 = 3*face.cols/5;
+	int y = face.rows / 3;
+	int h = face.rows / 8;
+	int w = face.cols / 5;
+
+	rects.reserve(2);
+	rects.emplace_back(x1, y, w, h);
+	rects.emplace_back(x2, y, w, h);
+}	// detect
+
 
 class HaarDetector : public Detector
 {
@@ -40,7 +77,7 @@ public:
 
 	// TODO: define getters and setters
 
-	virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) override;
+	//virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) override;
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) override;
 
@@ -63,17 +100,17 @@ HaarDetector::HaarDetector(const cv::String &fileName, double scaleFactor, int m
 	CV_Assert(!this->cascadeClassifier.empty());
 }
 
-void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Mat>& objs)
-{
-	std::vector<cv::Rect> rects;
-	HaarDetector::detect(image, rects);
-
-	objs.reserve(rects.size());
-	for (const cv::Rect& r : rects)
-	{
-		objs.push_back(image(r));
-	}
-}
+//void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Mat>& objs)
+//{
+//	std::vector<cv::Rect> rects;
+//	HaarDetector::detect(image, rects);
+//
+//	objs.reserve(rects.size());
+//	for (const cv::Rect& r : rects)
+//	{
+//		objs.push_back(image(r));
+//	}
+//}
 
 void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 {
@@ -164,13 +201,14 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		if (eyeRects[0].y + eyeRects[0].height < eyeRects[1].y || eyeRects[0].y > eyeRects[1].y + eyeRects[1].height)
 			continue;
 
-		int x1 = std::min(eyeRects[0].x, eyeRects[1].x);
+		/*int x1 = std::min(eyeRects[0].x, eyeRects[1].x);
 		int x2 = std::max(eyeRects[0].x + eyeRects[0].width, eyeRects[1].x + eyeRects[1].width);
 		int y1 = std::min(eyeRects[0].y, eyeRects[1].y);
-		int y2 = std::max(eyeRects[0].y+eyeRects[0].height, eyeRects[1].y+eyeRects[1].height);
-		
+		int y2 = std::max(eyeRects[0].y+eyeRects[0].height, eyeRects[1].y+eyeRects[1].height);*/
+		cv::Rect eyeRegion = eyeRects[0] | eyeRects[1];	// minimum area rectangle containing both eye rectangles
 
-		cv::rectangle(face, cv::Rect(x1, y1, x2 - x1, y2 - y1), cv::Scalar(0, 255, 0));
+		//cv::rectangle(face, cv::Rect(x1, y1, x2 - x1, y2 - y1), cv::Scalar(0, 255, 0));
+		cv::rectangle(face, eyeRegion, cv::Scalar(0, 255, 0));
 		cv::imshow("face", face);
 		cv::waitKey(10);
 	}	// faces
@@ -188,20 +226,23 @@ int main(int argc, char* argv[])
 {
 	try
 	{
-		SunglassesFilter filter("./images/sunglass.png");
-		//SunglassesFilter filter("./images/sunglass.png", std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml")
-		//	, std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml", 1.01, 5, 0, cv::Size(1,1)));
+		//SunglassesFilter filter("./images/sunglass.png");
+		auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
+		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
+		SunglassesFilter filter("./images/sunglass.png", std::move(faceDetector), std::move(eyeDetector));
 
-		//cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
+		/*
+		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
 		//cv::Mat imGlasses = cv::imread("./images/sunglass.png", cv::IMREAD_UNCHANGED);
 		//CV_Assert(imGlasses.channels() == 4);
 
-		/*cv::imshow("input", imInput);
+		cv::imshow("input", imInput);
 		cv::waitKey();
 
 		cv::Mat imOut = filter.apply(imInput);
 		cv::imshow("output", imOut);
-		cv::waitKey();*/
+		cv::waitKey();
+		*/
 
 		cv::VideoCapture cap(0);
 		while (cap.isOpened())
