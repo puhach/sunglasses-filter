@@ -282,9 +282,14 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::imshow("test", sunglassesROIF);
 	cv::waitKey();
 
-	/*cv::rectangle(face, sunglassesRect, cv::Scalar(0, 255, 0));
-	cv::imshow("face", face);
-	cv::waitKey(10);*/
+	std::vector<cv::Mat1f> channels;
+	cv::split(sunglassesResizedF, channels);
+
+	// Obtain the alpha mask 
+	cv::Mat1f mask1F = channels[3];
+	cv::imshow("test", mask1F);
+	cv::waitKey();
+
 }	// fitSunglasses
 
 
