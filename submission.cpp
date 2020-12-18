@@ -149,6 +149,7 @@ class SunglassesFilter : public ImageFilter
 {
 public:
 	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile,
+		float opacity=0.5f, float reflectivity=0.4f,
 		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
 		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml", 1.1, 15));
 
@@ -163,14 +164,16 @@ private:
 	void fitSunglasses(cv::Mat &face, const cv::Rect &eyeRegion);
 
 	std::unique_ptr<Detector> eyeDetector, faceDetector;
-	//cv::CascadeClassifier faceClassifier, eyeClassifier;
+	float opacity, reflectivity;
 	cv::Mat sunglasses, reflection;		// TODO: perhaps, extract the mask and convert the sunglasses image to 3F in the constructor?
 };	// SunglassesFilter
 
 SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile
-	, std::unique_ptr<Detector> eyeDetector, std::unique_ptr<Detector> faceDetector)
-	: eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::runtime_error("The eye detector is a null pointer."))
-	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::runtime_error("The face detector object is a null pointer."))
+	, float opacity, float reflectivity, std::unique_ptr<Detector> eyeDetector, std::unique_ptr<Detector> faceDetector)	
+	: eyeDetector(eyeDetector ? std::move(eyeDetector) : throw std::invalid_argument("The eye detector is a null pointer."))
+	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::invalid_argument("The face detector object is a null pointer."))
+	, opacity(opacity>=0 && opacity<=1 ? opacity : throw std::invalid_argument("The value of opacity must be in range 0..1."))
+	, reflectivity(reflectivity>=0 && reflectivity<=1 ? reflectivity : throw std::invalid_argument("The value of reflectivity must be in range 0..1."))
 	, sunglasses(cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED))
 	, reflection(cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE))
 {
@@ -326,72 +329,48 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::resize(reflectionF, reflectionResizedF, mask1F.size());
 
 	// Make the reflection semi-transparent
-	float reflectivity = 0.7f;	// TODO: add this parameter to the constructor
-	//overlayImages(reflectionResizedF,  mask1F*reflectivity);
-	//cv::Mat1f reflectionMask = mask1F * reflectivity;
-	//cv::Mat1f reflectionMask;
-	//mask1F.convertTo(reflectionMask, CV_32F, reflectivity);
-	cv::multiply(reflectionResizedF, mask1F, reflectionResizedF, reflectivity);
+	cv::multiply(reflectionResizedF, mask1F, reflectionResizedF, this->reflectivity);
 
 	// The non-reflected part comes from the image of sunglasses
-	//reflectionMask.convertTo(reflectionMask, CV_32F, -1, 1);	// invert the mask
 	for (int i = 0; i < 3; ++i)
 	{
-		//cv::imshow("channel", channels[i]);
-		//cv::waitKey();
-
-		cv::multiply(channels[i], mask1F, channels[i], 1.0-reflectivity);
+		cv::multiply(channels[i], mask1F, channels[i], 1.0-this->reflectivity);
 		channels[i] += reflectionResizedF;
-
-		//double minVal, maxVal;	// TEST!
-		//cv::minMaxLoc(channels[i], &minVal, &maxVal);
 	}
-
 
 	// Remove the alpha channel to create a 3-channel image of sunglasses (so as to match the ROI)
 	channels.pop_back();
 	cv::Mat3f sunglassesResized3F;
 	cv::merge(channels, sunglassesResized3F);
 
-	cv::imshow("test", sunglassesResized3F);
-	cv::waitKey();
-
-	float transparency = 0.3;	// TODO: add a constructor parameter
-	//mask1F *= transparency;
-
-	
-	
 
 	// Create a 3-channel mask to match the ROI
 	cv::Mat3f mask3F;
-	//mask1F.convertTo(mask1F, CV_32F, -1, +1);	// invert the mask
 	cv::merge(std::vector<cv::Mat1f>{ mask1F, mask1F, mask1F }, mask3F);
 
+	
 	// Overlay the face with the sunglasses
-	// 1) sunglasses' = sunglasses*mask*(1-transparency)
-	// 2) face' = face*(1 - mask*(1-transparency)) = face - face*mask*(1-transparency)
-	// 3) result = face' + sunglasses' = face - face*mask*(1-transparency) + sunglasses*mask*(1-transparency) = face + mask*(1-transparency)(sunglasses-face)
+	// 1) sunglasses' = sunglasses*mask*opacity
+	// 2) face' = face*(1 - mask*opacity) = face - face*mask*opacity
+	// 3) result = face' + sunglasses' = face - face*mask*opacity + sunglasses*mask*opacity = face + mask*opacity*(sunglasses-face)
 	sunglassesResized3F -= sunglassesROIF;
-	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, 1.0-transparency);
+	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, this->opacity);
 	sunglassesROIF += sunglassesResized3F;
 	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
-
+	
+	// The following code can be used to make the border of the sunglasses opaque
 	/*
-	// Overlay the face with the sunglasses:
-	// 1) sunglasses: src*mask*(1-transparency)
-	// 2) face: src*(1 - mask*(1-transparency)) = src + src*mask*(transparency-1)
-	// 3) combined: face + face*mask*(transparency-1) + sunglasses*mask(1-transparency)
-	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, 1.0 - transparency);		// make the sunglasses semi-transparent
-	//mask3F.convertTo(maskInv3F, CV_32F, (transparency-1.0), +1);	// invert the transparency mask
-	//cv::multiply(sunglassesROIF, maskInv3F, sunglassesROIF, transparency - 1.0);
-	cv::multiply(sunglassesROIF, mask3F, sunglassesROIF, transparency - 1.0);
-	sunglassesROIF += sunglassesResized3F;
-	//cv::addWeighted(sunglassesROIF, 1.0, sunglassesROIB, 1.0 / 255, 0, sunglassesROIF, CV_32F);
+	cv::Mat1f maskEroded1F;
+	cv::erode(mask1F, maskEroded1F, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
 
-	cv::addWeighted(sunglassesROIF, 255.0, sunglassesROIB, 1.0, 0, sunglassesROIB, CV_8U);
-	/// Convert the sunglasses ROI back to match the image
-	//sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
-	*/
+	cv::Mat3f maskEroded3F;
+	cv::merge(std::vector<cv::Mat1f>{maskEroded1F, maskEroded1F, maskEroded1F}, maskEroded3F);
+	cv::Mat3f borderMask3F = mask3F - maskEroded3F;
+
+	sunglassesROIF = sunglassesResized3F.mul(borderMask3F + maskEroded3F * opacity)
+		+ sunglassesROIF.mul(cv::Scalar::all(1) - mask3F + maskEroded3F * (1-opacity));
+
+	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);*/
 }	// fitSunglasses
 
 
@@ -403,7 +382,7 @@ int main(int argc, char* argv[])
 		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
 		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
 		//auto eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml");
-		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", std::move(eyeDetector));
+		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", 0.5f, 0.4f, std::move(eyeDetector));
 
 		
 		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
