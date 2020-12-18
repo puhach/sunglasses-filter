@@ -148,8 +148,7 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 class SunglassesFilter : public ImageFilter
 {
 public:
-	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile,
-		float opacity=0.5f, float reflectivity=0.4f,
+	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile, float opacity=0.5f, float reflectivity=0.4f,
 		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
 		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml", 1.1, 15));
 
@@ -165,7 +164,11 @@ private:
 
 	std::unique_ptr<Detector> eyeDetector, faceDetector;
 	float opacity, reflectivity;
-	cv::Mat sunglasses, reflection;		// TODO: perhaps, extract the mask and convert the sunglasses image to 3F in the constructor?
+	//cv::Mat sunglasses, reflection;		
+	//cv::Mat4b sunglasses4B;
+	//cv::Mat1b reflection1B;
+	cv::Mat4f sunglasses4F;
+	cv::Mat1f reflection1F;
 };	// SunglassesFilter
 
 SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile
@@ -174,16 +177,24 @@ SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std:
 	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::invalid_argument("The face detector object is a null pointer."))
 	, opacity(opacity>=0 && opacity<=1 ? opacity : throw std::invalid_argument("The value of opacity must be in range 0..1."))
 	, reflectivity(reflectivity>=0 && reflectivity<=1 ? reflectivity : throw std::invalid_argument("The value of reflectivity must be in range 0..1."))
-	, sunglasses(cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED))
-	, reflection(cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE))
+	//, sunglasses4B(cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED))
+	//, reflection1B(cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE))
 {
-	//CV_Assert(!this->faceClassifier.empty());
-	//CV_Assert(!this->eyeClassifier.empty());
-	CV_Assert(!this->sunglasses.empty());
-	CV_Assert(this->sunglasses.channels() == 4);
+	// Read the image of sunglasses preserving the alpha channel
+	cv::Mat sunglasses = cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED);
+	CV_Assert(!sunglasses.empty());
+	CV_Assert(sunglasses.channels() == 4);
 	
-	CV_Assert(!this->reflection.empty());
-}
+	// Read the reflection image in the grayscale mode
+	cv::Mat reflection = cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE);
+	CV_Assert(!reflection.empty());
+	CV_Assert(reflection.channels() == 1);
+
+	// Convert the sunglasses and reflection matrices to float just once 
+	sunglasses.convertTo(this->sunglasses4F, CV_32F, 1 / 255.0);
+	reflection.convertTo(this->reflection1F, CV_32F, 1 / 255.0);
+
+}	// constructor
 
 void SunglassesFilter::applyInPlace(cv::Mat& image)
 {
@@ -249,93 +260,54 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	CV_Assert(face.channels() == 3);
 	CV_Assert(eyeRegion.width <= face.cols && eyeRegion.height <= face.rows);
 	
-	// TODO: convert sunglasses to float just once in the ctor
-	cv::Mat4f sunglassesF;
-	this->sunglasses.convertTo(sunglassesF, CV_32F, 1/255.0);
-
-	// TODO: convert the reflection to float just once in the constructor
-	cv::Mat1f reflectionF;
-	this->reflection.convertTo(reflectionF, CV_32F, 1 / 255.0);
-
+	
 	// As sunglasses are larger than the eye region, to fit them properly we need to know the size of the face at the level of eyes. 
 	// The eyes are supposed to be horizontally centered in the face, so the real face size can't be larger than the eye region width + 
 	// two minimal distances from the eyes to the face boundaries. By finding the ratio of the sunglasses width and the face width, 
 	// we can compute the scaling factor to resize the sunglasses image preserving the aspect ratio. Although it's unlikely to happen, 
 	// but the resized height of the sunglasses must not go beyond the face height.
-	double fx = (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses.cols;
-	double fy = (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses.rows;
-	//double fx = 1.0*face.cols / this->sunglasses.cols;	// TODO: introduce a fit factor?
-	//double fy = 1.0 * face.rows / this->sunglasses.rows;
+	double fx = (2.0 * std::min(eyeRegion.x, face.cols - eyeRegion.x - eyeRegion.width) + eyeRegion.width) / this->sunglasses4F.cols;
+	double fy = (2.0 * std::min(eyeRegion.y, face.rows - eyeRegion.y - eyeRegion.height) + eyeRegion.height) / this->sunglasses4F.rows;
 	double f = std::min(fx, fy);	// make sure glasses do not exceed the face boundaries
 
 	// Resize the image of sunglasses preserving the aspect ratio
-	cv::Mat4f sunglassesResizedF;
-	//cv::resize(sunglassesF, sunglassesResizedF, sunglassesRect.size());
-	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
-	CV_Assert(sunglassesResizedF.cols > 0 && sunglassesResizedF.rows > 0);
+	cv::Mat4f sunglassesResized4F;
+	cv::resize(this->sunglasses4F, sunglassesResized4F, cv::Size(), f, f);
+	CV_Assert(sunglassesResized4F.cols > 0 && sunglassesResized4F.rows > 0);
 
-	/*fx = static_cast<double>(reflectionF.cols) / sunglassesResizedF.cols;
-	fy = static_cast<double>(reflectionF.rows) / sunglassesResizedF.rows;
-	f = std::max(fx, fy);
-	cv::resize(reflectionF, reflectionF, cv::Size(), f, f);
-	CV_Assert(reflectionF.cols >= sunglassesResizedF.cols && reflectionF.rows >= sunglassesResizedF.rows);
-
-	// Crop the reflection image
-	reflectionF = reflectionF(cv::Rect(0, 0, sunglassesResizedF.cols, sunglassesResizedF.rows));*/
-
-	//cv::imshow("test", reflectionF);
-	//cv::waitKey();
-
-	/*
+		
 	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
-	//cv::Size dsz = cv::max( sunglassesResizedF.size() - eyeRegion.size(), cv::Size(0,0));
-	cv::Point dsz = sunglassesResizedF.size() - eyeRegion.size();
-	//cv::Rect sunglassesRect(eyeRegion.x - dsz.width/2, eyeRegion.y-dsz.height/2, sunglassesResizedF.cols, sunglassesResizedF.rows);
-	cv::Rect sunglassesRect(eyeRegion.tl() - dsz/2, sunglassesResizedF.size());
-	CV_Assert(eyeRegion.x >= 0 && eyeRegion.y >= 0 && eyeRegion.x + eyeRegion.width < face.cols && eyeRegion.y + eyeRegion.height < face.rows);
-	*/
-
-	
-	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
-	cv::Mat3b sunglassesROIB = face(eyeRegion);
-	//cv::Point dsz = (sunglassesResizedF.size() - eyeRegion.size())/2;
-	//sunglassesROIB.adjustROI(dsz.y, dsz.y, dsz.x, dsz.x);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
-	int dx = sunglassesResizedF.cols - eyeRegion.width;
-	int dy = sunglassesResizedF.rows - eyeRegion.height;
-	sunglassesROIB.adjustROI(dy/2, dy/2+dy%2, dx/2, dx/2+dx%2);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
-	//cv::Mat3b sunglassesROIB = face(sunglassesRect);
-	CV_Assert(sunglassesROIB.size() == sunglassesResizedF.size());
+	cv::Mat3b sunglassesROI3B = face(eyeRegion);
+	int dx = sunglassesResized4F.cols - eyeRegion.width;
+	int dy = sunglassesResized4F.rows - eyeRegion.height;
+	sunglassesROI3B.adjustROI(dy/2, dy/2+dy%2, dx/2, dx/2+dx%2);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
+	CV_Assert(sunglassesROI3B.size() == sunglassesResized4F.size());
 	
 	// Scale the pixel values to 0..1
-	cv::Mat3f sunglassesROIF;
-	sunglassesROIB.convertTo(sunglassesROIF, CV_32F, 1 / 255.0);
-	
+	cv::Mat3f sunglassesROI3F;
+	sunglassesROI3B.convertTo(sunglassesROI3F, CV_32F, 1 / 255.0);
 
-	//cv::imshow("test", sunglassesROIF);
-	//cv::waitKey();
 
 	// Extract BGRA channels from the image of sunglasses
 	std::vector<cv::Mat1f> channels;
-	cv::split(sunglassesResizedF, channels);
+	cv::split(sunglassesResized4F, channels);
 
 	// Obtain the alpha mask 
 	cv::Mat1f mask1F = channels[3];
-	//cv::imshow("test", mask1F);
-	//cv::waitKey();
 
 
 	// Resize the reflection image to match the size of sunglasses
-	cv::Mat1f reflectionResizedF;
-	cv::resize(reflectionF, reflectionResizedF, mask1F.size());
+	cv::Mat1f reflectionResized1F;
+	cv::resize(this->reflection1F, reflectionResized1F, mask1F.size());
 
 	// Make the reflection semi-transparent
-	cv::multiply(reflectionResizedF, mask1F, reflectionResizedF, this->reflectivity);
+	cv::multiply(reflectionResized1F, mask1F, reflectionResized1F, this->reflectivity);
 
 	// The non-reflected part comes from the image of sunglasses
 	for (int i = 0; i < 3; ++i)
 	{
 		cv::multiply(channels[i], mask1F, channels[i], 1.0-this->reflectivity);
-		channels[i] += reflectionResizedF;
+		channels[i] += reflectionResized1F;
 	}
 
 	// Remove the alpha channel to create a 3-channel image of sunglasses (so as to match the ROI)
@@ -353,11 +325,12 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	// 1) sunglasses' = sunglasses*mask*opacity
 	// 2) face' = face*(1 - mask*opacity) = face - face*mask*opacity
 	// 3) result = face' + sunglasses' = face - face*mask*opacity + sunglasses*mask*opacity = face + mask*opacity*(sunglasses-face)
-	sunglassesResized3F -= sunglassesROIF;
+	sunglassesResized3F -= sunglassesROI3F;
 	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, this->opacity);
-	sunglassesROIF += sunglassesResized3F;
-	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
+	sunglassesROI3F += sunglassesResized3F;
+	sunglassesROI3F.convertTo(sunglassesROI3B, CV_8U, 255);
 	
+
 	// The following code can be used to make the border of the sunglasses opaque
 	/*
 	cv::Mat1f maskEroded1F;
@@ -367,10 +340,10 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::merge(std::vector<cv::Mat1f>{maskEroded1F, maskEroded1F, maskEroded1F}, maskEroded3F);
 	cv::Mat3f borderMask3F = mask3F - maskEroded3F;
 
-	sunglassesROIF = sunglassesResized3F.mul(borderMask3F + maskEroded3F * opacity)
-		+ sunglassesROIF.mul(cv::Scalar::all(1) - mask3F + maskEroded3F * (1-opacity));
+	sunglassesROI3F = sunglassesResized3F.mul(borderMask3F + maskEroded3F * opacity)
+		+ sunglassesROI3F.mul(cv::Scalar::all(1) - mask3F + maskEroded3F * (1.0-opacity));
 
-	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);*/
+	sunglassesROI3F.convertTo(sunglassesROI3B, CV_8U, 255);*/
 }	// fitSunglasses
 
 
