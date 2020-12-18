@@ -15,10 +15,29 @@ class ImageFilter
 public:
 	virtual ~ImageFilter() = default;
 
-	virtual void applyInPlace(cv::Mat& image) = 0;
+	cv::Mat apply(const cv::Mat& image);	// always allocates a new matrix to store the output
 
-	virtual cv::Mat apply(const cv::Mat& image) = 0;
+	void apply(const cv::Mat& image, cv::Mat& out);		// may be useful if the output matrix of the matching type has already been allocated
+
+	virtual void applyInPlace(cv::Mat& image) = 0;	// stores the result into the same matrix as the input
+
+	// TODO: implement cloning
 };	// ImageFilter
+
+
+cv::Mat ImageFilter::apply(const cv::Mat& image)
+{
+	cv::Mat imageCopy = image.clone();
+	applyInPlace(imageCopy);	// virtual call
+	return imageCopy;
+}
+
+void ImageFilter::apply(const cv::Mat& image, cv::Mat& out)
+{
+	image.copyTo(out);
+	applyInPlace(out);
+}
+
 
 
 class Detector
@@ -27,7 +46,7 @@ public:
 	virtual ~Detector() = default;
 
 	//virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) = 0;
-	virtual void detect(const cv::Mat& image, std::vector<cv::Mat>& objs);
+	/*virtual*/ void detect(const cv::Mat& image, std::vector<cv::Mat>& objs);
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) = 0;
 };	// Detector
@@ -137,7 +156,7 @@ public:
 
 	virtual void applyInPlace(cv::Mat& image) override;
 
-	virtual cv::Mat apply(const cv::Mat& image) override;
+	//virtual cv::Mat apply(const cv::Mat& image) override;
 
 private:
 
@@ -213,12 +232,12 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 	}	// faces
 }	// applyInPlace
 
-cv::Mat SunglassesFilter::apply(const cv::Mat& image)
-{
-	cv::Mat imageCopy = image.clone();
-	SunglassesFilter::applyInPlace(imageCopy);
-	return imageCopy;
-}	// apply
+//cv::Mat SunglassesFilter::apply(const cv::Mat& image)
+//{
+//	cv::Mat imageCopy = image.clone();
+//	SunglassesFilter::applyInPlace(imageCopy);
+//	return imageCopy;
+//}	// apply
 
 void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 {
