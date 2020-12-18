@@ -45,7 +45,6 @@ class Detector
 public:
 	virtual ~Detector() = default;
 
-	//virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) = 0;
 	/*virtual*/ void detect(const cv::Mat& image, std::vector<cv::Mat>& objs);
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) = 0;
@@ -67,9 +66,6 @@ void Detector::detect(const cv::Mat& image, std::vector<cv::Mat>& objs)
 class ProportionalEyeDetector : public Detector
 {
 public:
-
-	//virtual void detect(const cv::Mat& image, std::vector<cv::Mat>& objs) override;
-
 	virtual void detect(const cv::Mat &face, std::vector<cv::Rect> &rects) override;
 };	// ProportionalEyeDetector
 
@@ -110,8 +106,6 @@ public:
 	cv::Size getMaxSize() const { return this->maxSize; }
 	void setMaxSize(const cv::Size& maxSize) { this->maxSize = maxSize; }
 
-	//virtual void detect(const cv::Mat &image, std::vector<cv::Mat>& objs) override;
-
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) override;
 
 private:
@@ -132,18 +126,6 @@ HaarDetector::HaarDetector(const cv::String &fileName, double scaleFactor, int m
 {
 	CV_Assert(!this->cascadeClassifier.empty());
 }
-
-//void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Mat>& objs)
-//{
-//	std::vector<cv::Rect> rects;
-//	HaarDetector::detect(image, rects);
-//
-//	objs.reserve(rects.size());
-//	for (const cv::Rect& r : rects)
-//	{
-//		objs.push_back(image(r));
-//	}
-//}
 
 void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 {
@@ -169,17 +151,12 @@ public:
 
 	virtual void applyInPlace(cv::Mat& image) override;
 
-	//virtual cv::Mat apply(const cv::Mat& image) override;
-
 private:
 
 	void fitSunglasses(cv::Mat &face, const cv::Rect &eyeRegion);
 
 	std::unique_ptr<Detector> eyeDetector, faceDetector;
 	float opacity, reflectivity;
-	//cv::Mat sunglasses, reflection;		
-	//cv::Mat4b sunglasses4B;
-	//cv::Mat1b reflection1B;
 	cv::Mat4f sunglasses4F;
 	cv::Mat1f reflection1F;
 };	// SunglassesFilter
@@ -190,8 +167,6 @@ SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std:
 	, faceDetector(faceDetector ? std::move(faceDetector) : throw std::invalid_argument("The face detector object is a null pointer."))
 	, opacity(opacity>=0 && opacity<=1 ? opacity : throw std::invalid_argument("The value of opacity must be in range 0..1."))
 	, reflectivity(reflectivity>=0 && reflectivity<=1 ? reflectivity : throw std::invalid_argument("The value of reflectivity must be in range 0..1."))
-	//, sunglasses4B(cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED))
-	//, reflection1B(cv::imread(reflectionFile, cv::IMREAD_GRAYSCALE))
 {
 	// Read the image of sunglasses preserving the alpha channel
 	cv::Mat sunglasses = cv::imread(sunglassesFile, cv::IMREAD_UNCHANGED);
@@ -206,7 +181,6 @@ SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std:
 	// Convert the sunglasses and reflection matrices to float just once 
 	sunglasses.convertTo(this->sunglasses4F, CV_32F, 1 / 255.0);
 	reflection.convertTo(this->reflection1F, CV_32F, 1 / 255.0);
-
 }	// constructor
 
 void SunglassesFilter::applyInPlace(cv::Mat& image)
@@ -221,52 +195,22 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 		std::vector<cv::Rect> eyeRects;
 		this->eyeDetector->detect(face, eyeRects);
 
-		/*
-		//if (eyeRects.empty())
-		//	continue;
-
-		////int x1 = face.cols, x2 = 0, y1 = face.rows, y2 = 0;
-		for (const cv::Rect& eyeRect : eyeRects)
-		{
-			//x1 = std::min(x1, eyeRect.x);
-			//x2 = std::max(x2, eyeRect.x);
-			//y1 = std::min(y1, eyeRect.y);
-			//y2 = std::max(y2, eyeRect.y);
-
-			cv::rectangle(face, eyeRect, cv::Scalar(255,0,0));
-			//cv::imshow("face", face);
-			//cv::waitKey(10);
-		}
-		*/
-
 		// Eyes are expected to be in the top part of the face
 		auto eyesEnd = std::remove_if(eyeRects.begin(), eyeRects.end(), [&face](const cv::Rect& r) {
 				return r.y > face.rows / 2;
 			});
-
 		
 		// There must be two eyes, otherwise we just skip this face
 		if (eyesEnd - eyeRects.begin() < 2)
 			continue;
-
-		//if (eyeRects[0].y > eyeRects[1].y && eyeRects[0].y < eyeRects[1].y + eyeRects[1].height 
-		//	|| eyeRects[0].y + eyeRects[0].height > eyeRects[1].y && eyeRects[0].y + eyeRects[0].height < eyeRects[1].y + eyeRects[1].height)
 
 		// Eye rectangles must be roughly on the same level
 		if (eyeRects[0].y + eyeRects[0].height < eyeRects[1].y || eyeRects[0].y > eyeRects[1].y + eyeRects[1].height)
 			continue;
 
 		fitSunglasses(face, eyeRects[0] | eyeRects[1]);	// minimum area rectangle containing both eye rectangles
-
 	}	// faces
 }	// applyInPlace
-
-//cv::Mat SunglassesFilter::apply(const cv::Mat& image)
-//{
-//	cv::Mat imageCopy = image.clone();
-//	SunglassesFilter::applyInPlace(imageCopy);
-//	return imageCopy;
-//}	// apply
 
 void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 {
