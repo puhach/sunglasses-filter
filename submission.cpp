@@ -271,10 +271,6 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
 	CV_Assert(sunglassesResizedF.cols > 0 && sunglassesResizedF.rows > 0);
 
-	
-	// Resize the reflection image to match the size of sunglasses
-	cv::resize(reflectionF, reflectionF, sunglassesResizedF.size());
-	
 	/*fx = static_cast<double>(reflectionF.cols) / sunglassesResizedF.cols;
 	fy = static_cast<double>(reflectionF.rows) / sunglassesResizedF.rows;
 	f = std::max(fx, fy);
@@ -324,32 +320,78 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	//cv::imshow("test", mask1F);
 	//cv::waitKey();
 
-	// Remove the alpha channel to create a 3-channel image of sunglasses
+
+	// Resize the reflection image to match the size of sunglasses
+	cv::Mat1f reflectionResizedF;
+	cv::resize(reflectionF, reflectionResizedF, mask1F.size());
+
+	// Make the reflection semi-transparent
+	float reflectivity = 0.7f;	// TODO: add this parameter to the constructor
+	//overlayImages(reflectionResizedF,  mask1F*reflectivity);
+	//cv::Mat1f reflectionMask = mask1F * reflectivity;
+	//cv::Mat1f reflectionMask;
+	//mask1F.convertTo(reflectionMask, CV_32F, reflectivity);
+	cv::multiply(reflectionResizedF, mask1F, reflectionResizedF, reflectivity);
+
+	// The non-reflected part comes from the image of sunglasses
+	//reflectionMask.convertTo(reflectionMask, CV_32F, -1, 1);	// invert the mask
+	for (int i = 0; i < 3; ++i)
+	{
+		//cv::imshow("channel", channels[i]);
+		//cv::waitKey();
+
+		cv::multiply(channels[i], mask1F, channels[i], 1.0-reflectivity);
+		channels[i] += reflectionResizedF;
+
+		//double minVal, maxVal;	// TEST!
+		//cv::minMaxLoc(channels[i], &minVal, &maxVal);
+	}
+
+
+	// Remove the alpha channel to create a 3-channel image of sunglasses (so as to match the ROI)
 	channels.pop_back();
 	cv::Mat3f sunglassesResized3F;
 	cv::merge(channels, sunglassesResized3F);
 
-	float transparency = 0.5;	// TODO: add a constructor parameter
-	mask1F *= transparency;
+	cv::imshow("test", sunglassesResized3F);
+	cv::waitKey();
 
-	// Create a 3-channel mask to match the images
+	float transparency = 0.3;	// TODO: add a constructor parameter
+	//mask1F *= transparency;
+
+	
+	
+
+	// Create a 3-channel mask to match the ROI
 	cv::Mat3f mask3F;
+	//mask1F.convertTo(mask1F, CV_32F, -1, +1);	// invert the mask
 	cv::merge(std::vector<cv::Mat1f>{ mask1F, mask1F, mask1F }, mask3F);
 
-	// Make the sunglasses semi-transparent
-	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F);
-	
 	// Overlay the face with the sunglasses
-	mask3F.convertTo(mask3F, CV_32F, -1, +1);	// invert the mask
-	cv::multiply(sunglassesROIF, mask3F, sunglassesROIF);
+	// 1) sunglasses' = sunglasses*mask*(1-transparency)
+	// 2) face' = face*(1 - mask*(1-transparency)) = face - face*mask*(1-transparency)
+	// 3) result = face' + sunglasses' = face - face*mask*(1-transparency) + sunglasses*mask*(1-transparency) = face + mask*(1-transparency)(sunglasses-face)
+	sunglassesResized3F -= sunglassesROIF;
+	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, 1.0-transparency);
 	sunglassesROIF += sunglassesResized3F;
-
-	//cv::imshow("test", sunglassesROIF);
-	//cv::waitKey();
-
-	// Convert the sunglasses ROI back to match the image
 	sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
-	
+
+	/*
+	// Overlay the face with the sunglasses:
+	// 1) sunglasses: src*mask*(1-transparency)
+	// 2) face: src*(1 - mask*(1-transparency)) = src + src*mask*(transparency-1)
+	// 3) combined: face + face*mask*(transparency-1) + sunglasses*mask(1-transparency)
+	cv::multiply(sunglassesResized3F, mask3F, sunglassesResized3F, 1.0 - transparency);		// make the sunglasses semi-transparent
+	//mask3F.convertTo(maskInv3F, CV_32F, (transparency-1.0), +1);	// invert the transparency mask
+	//cv::multiply(sunglassesROIF, maskInv3F, sunglassesROIF, transparency - 1.0);
+	cv::multiply(sunglassesROIF, mask3F, sunglassesROIF, transparency - 1.0);
+	sunglassesROIF += sunglassesResized3F;
+	//cv::addWeighted(sunglassesROIF, 1.0, sunglassesROIB, 1.0 / 255, 0, sunglassesROIF, CV_32F);
+
+	cv::addWeighted(sunglassesROIF, 255.0, sunglassesROIB, 1.0, 0, sunglassesROIB, CV_8U);
+	/// Convert the sunglasses ROI back to match the image
+	//sunglassesROIF.convertTo(sunglassesROIB, CV_8U, 255);
+	*/
 }	// fitSunglasses
 
 
