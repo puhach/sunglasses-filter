@@ -150,7 +150,7 @@ class SunglassesFilter : public ImageFilter
 public:
 	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile,
 		std::unique_ptr<Detector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
-		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml"));
+		std::unique_ptr<Detector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml", 1.1, 15));
 
 	// TODO: implement copy/move semantics
 
@@ -189,6 +189,8 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 
 	for (/*const*/ cv::Mat& face : faces)
 	{
+		cv::rectangle(face, cv::Rect(0, 0, face.cols-1, face.rows-1), cv::Scalar(0,0,255));
+
 		std::vector<cv::Rect> eyeRects;
 		this->eyeDetector->detect(face, eyeRects);
 
@@ -269,6 +271,7 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	cv::resize(sunglassesF, sunglassesResizedF, cv::Size(), f, f);
 	CV_Assert(sunglassesResizedF.cols > 0 && sunglassesResizedF.rows > 0);
 
+	
 	// Resize the reflection image to match the size of sunglasses
 	cv::resize(reflectionF, reflectionF, sunglassesResizedF.size());
 	
@@ -281,8 +284,8 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	// Crop the reflection image
 	reflectionF = reflectionF(cv::Rect(0, 0, sunglassesResizedF.cols, sunglassesResizedF.rows));*/
 
-	cv::imshow("test", reflectionF);
-	cv::waitKey();
+	//cv::imshow("test", reflectionF);
+	//cv::waitKey();
 
 	/*
 	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
@@ -293,16 +296,21 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 	CV_Assert(eyeRegion.x >= 0 && eyeRegion.y >= 0 && eyeRegion.x + eyeRegion.width < face.cols && eyeRegion.y + eyeRegion.height < face.rows);
 	*/
 
+	
 	// Having resized the image of sunglasses, we need to extend the eye region to match the size of the glasses
 	cv::Mat3b sunglassesROIB = face(eyeRegion);
-	cv::Point dsz = (sunglassesResizedF.size() - eyeRegion.size())/2;
-	sunglassesROIB.adjustROI(dsz.y, dsz.y, dsz.x, dsz.x);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
+	//cv::Point dsz = (sunglassesResizedF.size() - eyeRegion.size())/2;
+	//sunglassesROIB.adjustROI(dsz.y, dsz.y, dsz.x, dsz.x);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
+	int dx = sunglassesResizedF.cols - eyeRegion.width;
+	int dy = sunglassesResizedF.rows - eyeRegion.height;
+	sunglassesROIB.adjustROI(dy/2, dy/2+dy%2, dx/2, dx/2+dx%2);	// boundaries of the adjusted ROI are constrained by boundaries of the parent matrix
 	//cv::Mat3b sunglassesROIB = face(sunglassesRect);
-
+	CV_Assert(sunglassesROIB.size() == sunglassesResizedF.size());
+	
 	// Scale the pixel values to 0..1
 	cv::Mat3f sunglassesROIF;
 	sunglassesROIB.convertTo(sunglassesROIF, CV_32F, 1 / 255.0);
-
+	
 
 	//cv::imshow("test", sunglassesROIF);
 	//cv::waitKey();
