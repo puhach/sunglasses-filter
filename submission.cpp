@@ -29,7 +29,7 @@ public:
 	// C.130: For making deep copies of polymorphic classes prefer a virtual clone function instead of copy construction/assignment:
 	// http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rh-copy
 	virtual std::unique_ptr<AbstractDetector> clone() const & = 0;
-	virtual std::unique_ptr<AbstractDetector> clone() && = 0;
+	virtual std::unique_ptr<AbstractDetector> clone() && = 0;	// probably, not needed since we are using pointers, which can be moved anyway
 
 protected:
 
@@ -198,18 +198,23 @@ public:
 	virtual ~AbstractImageFilter() = default;
 
 	cv::Mat apply(const cv::Mat& image);	// always allocates a new matrix to store the output
-
 	void apply(const cv::Mat& image, cv::Mat& out);		// may be useful if the output matrix of the matching type has already been allocated
 
 	virtual void applyInPlace(cv::Mat& image) = 0;	// stores the result into the same matrix as the input
 
-	// TODO: implement cloning
-	//virtual std::unique_ptr<AbstractImageFilter> clone() const = 0;
+	// C.67: A base class should suppress copying, and provide a virtual clone instead if "copying" is desired
+	virtual std::unique_ptr<AbstractImageFilter> clone() const & = 0;
+	virtual std::unique_ptr<AbstractImageFilter> clone() && = 0;	// probably, redundant since we are using pointers, which can be easily moved
 
-//protected:
-//	AbstractImageFilter(const AbstractImageFilter&) = default;
-//	AbstractImageFilter(AbstractImageFilter&&) = default;
+protected:
+	AbstractImageFilter() = default;
+	AbstractImageFilter(const AbstractImageFilter&) = default;
+	AbstractImageFilter(AbstractImageFilter&&) = default;
 
+	// Possible solutions to assignment of polymorphic classes are proposed here:
+	// https://www.fluentcpp.com/2020/05/22/how-to-assign-derived-classes-in-cpp/
+	AbstractImageFilter& operator = (const AbstractImageFilter&) = delete;
+	AbstractImageFilter& operator = (AbstractImageFilter&&) = delete;
 };	// AbstractImageFilter
 
 
@@ -235,9 +240,16 @@ public:
 		std::unique_ptr<AbstractDetector> eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml"),
 		std::unique_ptr<AbstractDetector> faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml", 1.1, 15));
 
-	// TODO: implement copy/move semantics
+	~SunglassesFilter() = default;
 
 	virtual void applyInPlace(cv::Mat& image) override;
+
+	virtual std::unique_ptr<AbstractImageFilter> clone() const& override;
+	virtual std::unique_ptr<AbstractImageFilter> clone() && override;	
+
+protected:
+	SunglassesFilter(const SunglassesFilter& other);
+	SunglassesFilter(SunglassesFilter&& other);
 
 private:
 
@@ -270,6 +282,36 @@ SunglassesFilter::SunglassesFilter(const std::string& sunglassesFile, const std:
 	sunglasses.convertTo(this->sunglasses4F, CV_32F, 1 / 255.0);
 	reflection.convertTo(this->reflection1F, CV_32F, 1 / 255.0);
 }	// constructor
+
+SunglassesFilter::SunglassesFilter(const SunglassesFilter& other)
+	: eyeDetector(other.eyeDetector->clone())
+	, faceDetector(other.faceDetector->clone())
+	, opacity(other.opacity)
+	, reflectivity(other.reflectivity)
+	, sunglasses4F(other.sunglasses4F)	// it is safe not to perform deep cloning here as long as we do not modify 
+	, reflection1F(other.reflection1F)	// these matrices
+{
+}	// copy constructor
+
+SunglassesFilter::SunglassesFilter(SunglassesFilter&& other) 
+	: eyeDetector(std::move(other.eyeDetector))
+	, faceDetector(std::move(other.faceDetector))
+	, opacity(other.opacity)
+	, reflectivity(other.reflectivity)
+	, sunglasses4F(std::move(other.sunglasses4F))
+	, reflection1F(std::move(other.reflection1F))
+{
+}	// move constructor
+
+std::unique_ptr<AbstractImageFilter> SunglassesFilter::clone() const& 
+{
+	return std::unique_ptr<SunglassesFilter>(new SunglassesFilter(*this));
+}
+
+std::unique_ptr<AbstractImageFilter> SunglassesFilter::clone()&&
+{
+	return std::unique_ptr<SunglassesFilter>(new SunglassesFilter(std::move(*this)));
+}
 
 void SunglassesFilter::applyInPlace(cv::Mat& image)
 {
@@ -411,8 +453,13 @@ int main(int argc, char* argv[])
 		std::unique_ptr<AbstractDetector> anotherptr = eyeDetector->clone();
 		//auto eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml");
 		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", 0.5f, 0.4f, std::move(eyeDetector));
+		{
+			auto anotherfilter = filter.clone();
+			auto thirdfilter = std::move(*anotherfilter).clone();
+			//auto thirdfilter = std::move(anotherfilter);
+			//std::unique_ptr<AbstractImageFilter> thirdfilter(anotherfilter.get());
+		}
 
-		
 		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
 		//cv::Mat imGlasses = cv::imread("./images/sunglass.png", cv::IMREAD_UNCHANGED);
 		//CV_Assert(imGlasses.channels() == 4);
