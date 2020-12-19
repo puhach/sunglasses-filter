@@ -192,10 +192,10 @@ std::unique_ptr<AbstractDetector> HaarDetector::clone()&&
 //
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-class ImageFilter
+class AbstractImageFilter
 {
 public:
-	virtual ~ImageFilter() = default;
+	virtual ~AbstractImageFilter() = default;
 
 	cv::Mat apply(const cv::Mat& image);	// always allocates a new matrix to store the output
 
@@ -204,23 +204,23 @@ public:
 	virtual void applyInPlace(cv::Mat& image) = 0;	// stores the result into the same matrix as the input
 
 	// TODO: implement cloning
-	//virtual std::unique_ptr<ImageFilter> clone() const = 0;
+	//virtual std::unique_ptr<AbstractImageFilter> clone() const = 0;
 
 //protected:
-//	ImageFilter(const ImageFilter&) = default;
-//	ImageFilter(ImageFilter&&) = default;
+//	AbstractImageFilter(const AbstractImageFilter&) = default;
+//	AbstractImageFilter(AbstractImageFilter&&) = default;
 
-};	// ImageFilter
+};	// AbstractImageFilter
 
 
-cv::Mat ImageFilter::apply(const cv::Mat& image)
+cv::Mat AbstractImageFilter::apply(const cv::Mat& image)
 {
 	cv::Mat imageCopy = image.clone();
 	applyInPlace(imageCopy);	// virtual call
 	return imageCopy;
 }
 
-void ImageFilter::apply(const cv::Mat& image, cv::Mat& out)
+void AbstractImageFilter::apply(const cv::Mat& image, cv::Mat& out)
 {
 	image.copyTo(out);
 	applyInPlace(out);
@@ -228,7 +228,7 @@ void ImageFilter::apply(const cv::Mat& image, cv::Mat& out)
 
 
 
-class SunglassesFilter : public ImageFilter
+class SunglassesFilter : public AbstractImageFilter
 {
 public:
 	SunglassesFilter(const std::string& sunglassesFile, const std::string &reflectionFile, float opacity=0.5f, float reflectivity=0.4f,
