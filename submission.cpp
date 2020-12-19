@@ -22,6 +22,12 @@ public:
 	virtual void applyInPlace(cv::Mat& image) = 0;	// stores the result into the same matrix as the input
 
 	// TODO: implement cloning
+	//virtual std::unique_ptr<ImageFilter> clone() const = 0;
+
+//protected:
+//	ImageFilter(const ImageFilter&) = default;
+//	ImageFilter(ImageFilter&&) = default;
+
 };	// ImageFilter
 
 
@@ -48,6 +54,22 @@ public:
 	/*virtual*/ void detect(const cv::Mat& image, std::vector<cv::Mat>& objs);
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) = 0;
+
+	// C.130: For making deep copies of polymorphic classes prefer a virtual clone function instead of copy construction/assignment:
+	// http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rh-copy
+	virtual std::unique_ptr<Detector> clone() const = 0;
+
+protected:
+
+	// C.67: A polymorphic class should suppress copying:
+	// http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-copy-virtual
+	Detector() = default;
+	Detector(const Detector&) = default;
+	Detector(Detector&&) = default;
+	
+	// Explicitly mark the assignment operators as deleted
+	Detector& operator = (const Detector&) = delete;
+	Detector& operator = (Detector&&) = delete;
 };	// Detector
 
 void Detector::detect(const cv::Mat& image, std::vector<cv::Mat>& objs)
@@ -65,8 +87,21 @@ void Detector::detect(const cv::Mat& image, std::vector<cv::Mat>& objs)
 
 class ProportionalEyeDetector : public Detector
 {
+	// https://stackoverflow.com/questions/33905782/error-on-msvc-when-trying-to-declare-stdmake-unique-as-friend-of-my-templated
+	//friend std::unique_ptr<ProportionalEyeDetector> std::make_unique<ProportionalEyeDetector>(const ProportionalEyeDetector&);
 public:
+	ProportionalEyeDetector() = default;
+	~ProportionalEyeDetector() = default;
+
 	virtual void detect(const cv::Mat &face, std::vector<cv::Rect> &rects) override;
+
+	virtual std::unique_ptr<Detector> clone() const override;
+
+protected:
+	// C.67: A polymorphic class should suppress copying:
+	// http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-copy-virtual
+	ProportionalEyeDetector(const ProportionalEyeDetector&) = default;
+	ProportionalEyeDetector(ProportionalEyeDetector&&) = default;
 };	// ProportionalEyeDetector
 
 
@@ -83,6 +118,16 @@ void ProportionalEyeDetector::detect(const cv::Mat& face, std::vector<cv::Rect>&
 	rects.emplace_back(x2, y, w, h);
 }	// detect
 
+std::unique_ptr<Detector> ProportionalEyeDetector::clone() const
+{
+	// Since we declared the copy constructor as protected, make_unique doesn't work right out of the box.
+	// Making it a friend may be problematic, but using new should be safe here, because we are constructing only one object.
+	// https://stackoverflow.com/questions/33905030/how-to-make-stdmake-unique-a-friend-of-my-class
+	// https://stackoverflow.com/questions/33905782/error-on-msvc-when-trying-to-declare-stdmake-unique-as-friend-of-my-templated
+	return std::unique_ptr<ProportionalEyeDetector>(new ProportionalEyeDetector(*this));
+	// return std::make_unique<ProportionalEyeDetector>(*this);
+}
+
 
 class HaarDetector : public Detector
 {
@@ -90,6 +135,8 @@ public:
 
 	HaarDetector(const cv::String &fileName, double scaleFactor = 1.1, int minNeighbors = 3, 
 		int flags = 0, cv::Size minSize = cv::Size(), cv::Size maxSize = cv::Size());
+
+	HaarDetector() = default;
 
 	double getScaleFactor() const noexcept { return this->scaleFactor; }
 	void setScaleFactor(double scaleFactor) noexcept { this->scaleFactor = scaleFactor; }
@@ -107,6 +154,12 @@ public:
 	void setMaxSize(const cv::Size& maxSize) { this->maxSize = maxSize; }
 
 	virtual void detect(const cv::Mat &image, std::vector<cv::Rect>& rects) override;
+
+	virtual std::unique_ptr<Detector> clone() const override;
+
+protected:
+	HaarDetector(const HaarDetector&) = default;
+	HaarDetector(HaarDetector&&) = default;
 
 private:
 	cv::CascadeClassifier cascadeClassifier;
@@ -138,6 +191,14 @@ void HaarDetector::detect(const cv::Mat &image, std::vector<cv::Rect>& rects)
 
 	this->cascadeClassifier.detectMultiScale(imageGray, rects, this->scaleFactor, this->minNeighbors, this->flags, this->minSize, this->minSize);
 }	// detect
+
+std::unique_ptr<Detector> HaarDetector::clone() const
+{
+	// Although make_unique can't access our protected copy constructor, it must be safe to use new here, 
+	// because only one object is created this way and nothing will leak even if it throws an exception
+	return std::unique_ptr<HaarDetector>(new HaarDetector(*this));
+	//return std::make_unique<HaarDetector>(*this);
+}
 
 
 class SunglassesFilter : public ImageFilter
@@ -310,7 +371,14 @@ int main(int argc, char* argv[])
 	{
 		//SunglassesFilter filter("./images/sunglass.png");
 		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
+		HaarDetector one("./haarcascades/haarcascade_frontalface_default.xml");
+		auto two = one.clone();
+		//auto another = faceDetector;
 		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
+		//ProportionalEyeDetector another = *eyeDetector;
+		//ProportionalEyeDetector one;
+		//one = *eyeDetector;
+		std::unique_ptr<Detector> anotherptr = eyeDetector->clone();
 		//auto eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml");
 		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", 0.5f, 0.4f, std::move(eyeDetector));
 
