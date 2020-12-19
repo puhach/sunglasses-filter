@@ -2,13 +2,19 @@
 #include <iostream>
 #include <exception>
 #include <memory>
+#include <string>
 #include <vector>
+#include <set>
+#include <filesystem>
+#include <regex>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/objdetect.hpp>
+#include <opencv2/videoio.hpp>
+
 
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -434,10 +440,390 @@ void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
 }	// fitSunglasses
 
 
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	Classes for handling input/output data
+//
+///////////////////////////////////////////////////////////////////////////////////////////////
+
+
+enum class MediaSourceType	
+{
+	ImageFile,
+	VideoFile,
+	Webcam
+};
+
+class MediaSource	// a universal media source
+{
+public:
+
+	MediaSourceType getMediaType() const noexcept { return this->mediaType; }
+
+	const std::string& getMediaPath() const noexcept { return this->mediaPath; }
+
+	bool isLooped() const noexcept { return this->looped; }
+
+	virtual bool readNext(cv::Mat& frame) = 0;
+
+	virtual void reset() = 0;
+
+	virtual ~MediaSource() = default;
+
+protected:
+
+	MediaSource(MediaSourceType inputType, const std::string& mediaPath, bool looped)
+		: mediaType(inputType)
+		, mediaPath(mediaPath)
+		, looped(looped) {}
+
+	MediaSource(const MediaSource&) = default;
+	MediaSource(MediaSource&&) = default;
+
+	MediaSource& operator = (const MediaSource&) = default;
+	MediaSource& operator = (MediaSource&&) = default;
+
+private:
+	MediaSourceType mediaType;
+	std::string mediaPath;
+	bool looped = false;
+};	// MediaSource
+
+
+class ImageFileReader : public MediaSource
+{
+public:
+	ImageFileReader(const std::string& imageFile, bool looped = false);
+	ImageFileReader(const ImageFileReader&) = delete;
+	ImageFileReader(ImageFileReader&& other) = default;
+
+	ImageFileReader& operator = (const ImageFileReader&) = delete;
+	ImageFileReader& operator = (ImageFileReader&& other) = default;
+
+	bool readNext(cv::Mat& frame) override;
+	void reset() override;
+
+private:
+	cv::Mat cache;
+};	// ImageFileReader
+
+ImageFileReader::ImageFileReader(const std::string& imageFile, bool looped)
+	: MediaSource(MediaSourceType::ImageFile, std::filesystem::exists(imageFile) ? imageFile : throw std::runtime_error("Input image doesn't exist: " + imageFile), looped)
+{
+	if (!cv::haveImageReader(imageFile))
+		throw std::runtime_error("No decoder for this image file: " + imageFile);
+}	// ctor
+
+bool ImageFileReader::readNext(cv::Mat& frame)
+{
+	if (this->cache.empty())
+	{
+		frame = cv::imread(getMediaPath(), cv::IMREAD_COLOR);
+		CV_Assert(!frame.empty());
+		frame.copyTo(this->cache);
+		return true;
+	}	// cache empty
+	else
+	{
+		if (isLooped())
+		{
+			this->cache.copyTo(frame);
+			return true;
+		}
+		else return false;
+	}	// image cached
+}	// readNext
+
+void ImageFileReader::reset()
+{
+	this->cache.release();	// this will force the image to be reread
+}	// reset
+
+
+
+
+class VideoFileReader : public MediaSource
+{
+public:
+	VideoFileReader(const std::string& videoFile, bool looped = false);
+	VideoFileReader(const VideoFileReader&) = delete;
+	VideoFileReader(VideoFileReader&& other) = default;
+
+	VideoFileReader& operator = (const VideoFileReader&) = delete;
+	VideoFileReader& operator = (VideoFileReader&& other) = default;
+
+	virtual bool readNext(cv::Mat& frame) override;
+
+	virtual void reset() override;
+
+private:
+	cv::String inputFile;
+	cv::VideoCapture cap;
+};	// VideoFileReader
+
+
+
+VideoFileReader::VideoFileReader(const std::string& videoFile, bool looped)
+	: MediaSource(MediaSourceType::VideoFile, std::filesystem::exists(videoFile) ? videoFile : throw std::runtime_error("Input video doesn't exist: " + videoFile), looped)
+	, cap(videoFile)
+{
+	CV_Assert(cap.isOpened());
+}
+
+bool VideoFileReader::readNext(cv::Mat& frame)
+{
+	if (cap.read(frame))
+		return true;
+
+	if (isLooped())
+	{
+		// Close and try reading again
+		cap.release();
+		if (!cap.open(getMediaPath()) || !cap.read(frame))
+			throw std::runtime_error("Failed to read the input file.");
+
+		return true;
+	}	// looped
+	else return false;	// probably, the end of the stream
+}	// readNext
+
+void VideoFileReader::reset()
+{
+	cap.release();
+	CV_Assert(cap.open(getMediaPath()));
+}	// reset
+
+
+
+enum class MediaSinkType
+{
+	ImageFile,
+	VideoFile,
+	Dummy
+};
+
+class MediaSink
+{
+public:
+
+	MediaSinkType getMediaType() const noexcept { return this->mediaType; }
+
+	const std::string& getMediaPath() const noexcept { return this->mediaPath; }
+
+	virtual void write(const cv::Mat& frame) = 0;
+
+	virtual ~MediaSink() = default;
+
+protected:
+	MediaSink(MediaSinkType mediaType, const std::string& mediaPath)
+		: mediaType(mediaType)
+		, mediaPath(mediaPath) {}	// std::string's copy constructor is not noexcept 
+
+	MediaSink(const MediaSink&) = default;
+	MediaSink(MediaSink&&) = default;
+
+	MediaSink& operator = (const MediaSink&) = default;
+	MediaSink& operator = (MediaSink&&) = default;
+
+private:
+	MediaSinkType mediaType;
+	std::string mediaPath;
+};	// MediaSink
+
+
+
+class DummyWriter : public MediaSink
+{
+public:
+	DummyWriter() : MediaSink(MediaSinkType::Dummy, "") {}
+	DummyWriter(const DummyWriter&) = default;
+	DummyWriter(DummyWriter&&) = default;
+
+	DummyWriter& operator = (const DummyWriter&) = default;
+	DummyWriter& operator = (DummyWriter&&) = default;
+
+	virtual void write(const cv::Mat& frame) override { }
+};	// DummyWriter
+
+
+class ImageFileWriter : public MediaSink
+{
+public:
+	ImageFileWriter(const std::string& imageFile, cv::Size frameSize)
+		: MediaSink(MediaSinkType::ImageFile, cv::haveImageWriter(imageFile) ? imageFile : throw std::runtime_error("No encoder for this image file: " + imageFile))
+		, frameSize(std::move(frameSize)) { }
+
+	ImageFileWriter(const ImageFileWriter&) = delete;
+	ImageFileWriter(ImageFileWriter&&) = default;
+
+	ImageFileWriter& operator = (const ImageFileWriter&) = delete;
+	ImageFileWriter& operator = (ImageFileWriter&&) = default;
+
+	virtual void write(const cv::Mat& frame) override;
+
+private:
+	cv::Size frameSize;
+};	// ImageFileWriter
+
+
+void ImageFileWriter::write(const cv::Mat& frame)
+{
+	CV_Assert(frame.size() == this->frameSize);
+	if (!cv::imwrite(getMediaPath(), frame))
+		throw std::runtime_error("Failed to write the output image.");
+}	// write
+
+
+
+class VideoFileWriter : public MediaSink
+{
+public:
+	VideoFileWriter(const std::string& videoFile, cv::Size frameSize, const char(&fourcc)[4], double fps)
+		: MediaSink(MediaSinkType::VideoFile, videoFile)
+		, writer(videoFile, cv::VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]), fps, std::move(frameSize), true) {	}
+
+	VideoFileWriter(const VideoFileWriter&) = delete;
+	VideoFileWriter(VideoFileWriter&&) = default;
+
+	VideoFileWriter& operator = (const VideoFileWriter&) = delete;
+	VideoFileWriter& operator = (VideoFileWriter&&) = default;
+
+	virtual void write(const cv::Mat& frame) override;
+
+private:
+	cv::VideoWriter writer;
+};	// VideoWriter
+
+void VideoFileWriter::write(const cv::Mat& frame)
+{
+	writer.write(frame);
+}	// write
+
+
+class MediaFactory
+{
+public:
+	static std::unique_ptr<MediaSource> createReader(const std::string& input, bool loop = false);
+	static std::unique_ptr<MediaSink> createWriter(const std::string& output, cv::Size frameSize);
+
+private:
+	static const std::set<std::string> images;
+	static const std::set<std::string> video;
+
+	static std::string getFileExtension(const std::string& inputFile);
+
+	static int getWebCamIndex(const std::string &input);
+};	// MediaFactory
+
+
+const std::set<std::string> MediaFactory::images{ ".jpg", ".jpeg", ".png", ".bmp" };
+const std::set<std::string> MediaFactory::video{ ".mp4", ".avi" };
+
+
+
+std::string MediaFactory::getFileExtension(const std::string& fileName)
+{
+	//std::string ext = std::filesystem::path(fileName).extension().string();
+	//std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
+	return std::filesystem::path(fileName).extension().string();
+}
+
+int MediaFactory::getWebCamIndex(const std::string& input)
+{
+	// Match the "cam" prefix optionally followed by the colon and the camera index
+	// https://en.cppreference.com/w/cpp/regex/regex_match
+	// https://stackoverflow.com/questions/18633334/regex-optional-group/18633467
+	std::regex re("^cam(?::(\\d+))?$", std::regex::icase);
+	std::smatch matches;
+	if (std::regex_match(input, matches, re))	
+	{
+		if (matches.size() == 2)	// first submatch is the whole string, the next submatch is the first parenthesized expression
+		{
+			if (matches[1].matched)	// the second submatch is in the non-capturing group, hence it may not be matched
+			{
+				std::size_t pos;
+				int camIndex = std::stoi(matches[1].str(), &pos);
+				if (pos == matches[1].length())
+					return camIndex;
+			}
+			else return 0;	// optional :<camera index> not matched, return the default camera
+		}
+	}
+		
+	return -1;
+}
+
+std::unique_ptr<MediaSource> MediaFactory::createReader(const std::string& input, bool loop)
+{
+	/*std::string inputLC;
+	inputLC.reserve(input.size());
+	std::transform(input.begin(), input.end(), std::back_inserter(inputLC), [](char c) { return std::tolower(c); });*/
+	
+	std::string ext = getFileExtension(input);
+	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
+
+	if (images.find(ext) != images.end())
+		return std::make_unique<ImageFileReader>(input, loop);
+	else if (video.find(ext) != video.end())
+		return std::make_unique<VideoFileReader>(input, loop);
+	else if (int camIndex = getWebCamIndex(input); camIndex >= 0)
+	{
+		// TODO: implement webcam reader
+		std::cout << "webcam " << camIndex;
+	}
+	/*else if (int camIndex; std::sscanf(inputLC.c_str(), "cam:%d", &camIndex) == 1)
+	{
+		int ret = std::sscanf("cam:1a", "cam:%d\0",&camIndex);
+		std::cout << "webcam " << camIndex ;
+	}*/
+	else
+	{		
+		// TODO: may handle other input types here, e.g. URLs
+
+		throw std::runtime_error(std::string("Input file type is not supported: ").append(input));
+	}
+}	// createReader
+
+
+std::unique_ptr<MediaSink> MediaFactory::createWriter(const std::string& output, cv::Size frameSize)
+{
+	if (output.empty())
+		return std::make_unique<DummyWriter>();
+
+	std::string ext = MediaFactory::getFileExtension(output);
+	if (images.find(ext) != images.end())
+		return std::make_unique<ImageFileWriter>(output, frameSize);
+	else if (video.find(ext) != video.end())
+		// Help the compiler to deduce the argument types which are passed to the constructor
+		return std::make_unique<VideoFileWriter, const std::string&, cv::Size, const char(&)[4], double>(output, std::move(frameSize), { 'm','p','4','v' }, 30);
+	else
+	{
+		// TODO: consider adding other sinks
+
+		throw std::runtime_error(std::string("Output file type is not supported: ").append(ext));
+	}
+}	// createWriter
+
+
+
 int main(int argc, char* argv[])
 {
 	try
 	{
+		/*
+		static const cv::String keys =
+			"{help h usage ? |      | Print the help message  }"
+			"{image          |<none>| The input image file  }"
+			"{confidence     |0.7   | Face detection confidence threshold }"
+			"{radius         |3     | Blur radius          }"
+			"{sigmac         |30    | Blur sigma in the color space }"
+			"{sigmas         |30    | Blur sigma in the coordinate space }"
+			"{heuristic      |2     | Skin detection heuristic: 1 - Mean color, 2 - Dominant color, 3 - Selective sampling }";
+		*/
+
+
+		MediaFactory::createReader("cAm:123");
 		//SunglassesFilter filter("./images/sunglass.png");
 		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
 		HaarDetector one("./haarcascades/haarcascade_frontalface_default.xml");
