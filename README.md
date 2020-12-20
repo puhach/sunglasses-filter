@@ -47,17 +47,17 @@ The program has to be run from the command line. It takes in the path to the sun
 
 ```
 glassify --sunglasses=<sunglasses image file>
-		 --reflection=<reflection image file>
-		 [--input=<input image, video, or a webcam>]
-		 [--output=<output file>]
-		 [--opacity=<the opacity of the sunglasses (0..1)>]
-		 [--reflectivity=<the reflectivity of the sunglasses (0..1)>]
-		 [--use_haar_eye_detector=<true or false>]
-		 [--eye_scale_factor=<float>]
-		 [--eye_min_neighbors=<integer>]
-		 [--face_scale_factor=<float>]
-		 [--face_min_neighbors=<integer>] 
-         [--help]
+	 --reflection=<reflection image file>
+	 [--input=<input image, video, or a webcam>]
+	 [--output=<output file>]
+	 [--opacity=<the opacity of the sunglasses (0..1)>]
+	 [--reflectivity=<the reflectivity of the sunglasses (0..1)>]
+	 [--use_haar_eye_detector=<true or false>]
+	 [--eye_scale_factor=<float>]
+	 [--eye_min_neighbors=<integer>]
+	 [--face_scale_factor=<float>]
+	 [--face_min_neighbors=<integer>] 
+	 [--help]
 ```
 
 Parameter    | Meaning 

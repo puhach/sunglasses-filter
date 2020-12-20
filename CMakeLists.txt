@@ -13,7 +13,7 @@ set(OpenCV_DIR /opt/opencv/4.4.0/installation/lib/cmake/opencv4)
 
 
 if(MSVC)
-	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
 endif()
 
 
