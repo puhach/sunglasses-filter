@@ -607,6 +607,45 @@ void VideoFileReader::reset()
 }	// reset
 
 
+class WebcamReader : public MediaSource
+{
+public:
+	WebcamReader(int cameraId = 0)
+		: MediaSource(MediaSourceType::Webcam, std::string("cam:").append(std::to_string(cameraId)), false)
+		, cap(cameraId)
+		, cameraId(cameraId)
+	{
+		CV_Assert(this->cap.isOpened());
+	}
+
+	WebcamReader(const WebcamReader& other) = delete;
+	WebcamReader(WebcamReader&& other) = default;
+
+	WebcamReader& operator = (const WebcamReader& other) = delete;
+	WebcamReader& operator = (WebcamReader&& other) = default;
+
+	virtual bool readNext(cv::Mat& frame) override;
+
+	virtual void reset() override;
+
+private:
+	cv::VideoCapture cap;
+	int cameraId;
+};	// WebcamReader
+
+bool WebcamReader::readNext(cv::Mat& frame)
+{
+	return cap.read(frame);
+}
+
+void WebcamReader::reset()
+{
+	this->cap.release();
+	CV_Assert(this->cap.open(this->cameraId));
+}
+
+
+
 
 enum class MediaSinkType
 {
@@ -713,6 +752,7 @@ void VideoFileWriter::write(const cv::Mat& frame)
 }	// write
 
 
+
 class MediaFactory
 {
 public:
@@ -780,15 +820,7 @@ std::unique_ptr<MediaSource> MediaFactory::createReader(const std::string& input
 	else if (video.find(ext) != video.end())
 		return std::make_unique<VideoFileReader>(input, loop);
 	else if (int camIndex = getWebCamIndex(input); camIndex >= 0)
-	{
-		// TODO: implement webcam reader
-		std::cout << "webcam " << camIndex;
-	}
-	/*else if (int camIndex; std::sscanf(inputLC.c_str(), "cam:%d", &camIndex) == 1)
-	{
-		int ret = std::sscanf("cam:1a", "cam:%d\0",&camIndex);
-		std::cout << "webcam " << camIndex ;
-	}*/
+		return std::make_unique<WebcamReader>(camIndex);	
 	else
 	{		
 		// TODO: may handle other input types here, e.g. URLs
@@ -835,7 +867,7 @@ int main(int argc, char* argv[])
 		*/
 
 
-		MediaFactory::createReader("cAm:123");
+		auto webcamReader = MediaFactory::createReader("cAm");
 		//SunglassesFilter filter("./images/sunglass.png");
 		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
 		HaarDetector one("./haarcascades/haarcascade_frontalface_default.xml");
@@ -869,18 +901,23 @@ int main(int argc, char* argv[])
 		cv::imshow("output", imOut);
 		cv::waitKey();
 		
-
-		cv::VideoCapture cap(0);
-		while (cap.isOpened())
+		while (webcamReader->readNext(imInput))
 		{
-			cv::Mat frame;
-			cap >> frame;
-			//cv::imshow("input", imInput);
-			//cv::waitKey();
-			cv::Mat out = filter.apply(frame);
-			cv::imshow("test", out);
+			cv::imshow("input", imInput);
 			cv::waitKey(10);
 		}
+
+		//cv::VideoCapture cap(0);
+		//while (cap.isOpened())
+		//{
+		//	cv::Mat frame;
+		//	cap >> frame;
+		//	//cv::imshow("input", imInput);
+		//	//cv::waitKey();
+		//	cv::Mat out = filter.apply(frame);
+		//	cv::imshow("test", out);
+		//	cv::waitKey(10);
+		//}
 
 		cv::destroyAllWindows();
 
