@@ -492,11 +492,11 @@ protected:
 		, mediaPath(mediaPath)
 		, looped(looped) {}
 
-	MediaSource(const MediaSource&) = default;
-	MediaSource(MediaSource&&) = default;
+	MediaSource(const MediaSource&) = delete;
+	MediaSource(MediaSource&&) = delete;
 
-	MediaSource& operator = (const MediaSource&) = default;
-	MediaSource& operator = (MediaSource&&) = default;
+	MediaSource& operator = (const MediaSource&) = delete;
+	MediaSource& operator = (MediaSource&&) = delete;
 
 private:
 	MediaSourceType mediaType;
@@ -509,11 +509,11 @@ class ImageFileReader : public MediaSource
 {
 public:
 	ImageFileReader(const std::string& imageFile, bool looped = false);
-	ImageFileReader(const ImageFileReader&) = delete;
+	/*ImageFileReader(const ImageFileReader&) = delete;
 	ImageFileReader(ImageFileReader&& other) = default;
 
 	ImageFileReader& operator = (const ImageFileReader&) = delete;
-	ImageFileReader& operator = (ImageFileReader&& other) = default;
+	ImageFileReader& operator = (ImageFileReader&& other) = default;*/
 
 	virtual cv::Size getFrameSize() const;
 
@@ -577,11 +577,11 @@ class VideoFileReader : public MediaSource
 {
 public:
 	VideoFileReader(const std::string& videoFile, bool looped = false);
-	VideoFileReader(const VideoFileReader&) = delete;
+	/*VideoFileReader(const VideoFileReader&) = delete;
 	VideoFileReader(VideoFileReader&& other) = default;
 
 	VideoFileReader& operator = (const VideoFileReader&) = delete;
-	VideoFileReader& operator = (VideoFileReader&& other) = default;
+	VideoFileReader& operator = (VideoFileReader&& other) = default;*/
 
 	cv::Size getFrameSize() const;
 
@@ -645,11 +645,11 @@ public:
 		CV_Assert(this->cap.isOpened());
 	}
 
-	WebcamReader(const WebcamReader& other) = delete;
+	/*WebcamReader(const WebcamReader& other) = delete;
 	WebcamReader(WebcamReader&& other) = default;
 
 	WebcamReader& operator = (const WebcamReader& other) = delete;
-	WebcamReader& operator = (WebcamReader&& other) = default;
+	WebcamReader& operator = (WebcamReader&& other) = default;*/
 
 	cv::Size getFrameSize() const;
 
@@ -707,11 +707,11 @@ protected:
 		: mediaType(mediaType)
 		, mediaPath(mediaPath) {}	// std::string's copy constructor is not noexcept 
 
-	MediaSink(const MediaSink&) = default;
-	MediaSink(MediaSink&&) = default;
+	MediaSink(const MediaSink&) = delete;
+	MediaSink(MediaSink&&) = delete;
 
-	MediaSink& operator = (const MediaSink&) = default;
-	MediaSink& operator = (MediaSink&&) = default;
+	MediaSink& operator = (const MediaSink&) = delete;
+	MediaSink& operator = (MediaSink&&) = delete;
 
 private:
 	MediaSinkType mediaType;
@@ -724,11 +724,11 @@ class DummyWriter : public MediaSink
 {
 public:
 	DummyWriter() : MediaSink(MediaSinkType::Dummy, "") {}
-	DummyWriter(const DummyWriter&) = default;
+	/*DummyWriter(const DummyWriter&) = default;
 	DummyWriter(DummyWriter&&) = default;
 
 	DummyWriter& operator = (const DummyWriter&) = default;
-	DummyWriter& operator = (DummyWriter&&) = default;
+	DummyWriter& operator = (DummyWriter&&) = default;*/
 
 	virtual void write(const cv::Mat& frame) override { }
 };	// DummyWriter
@@ -741,11 +741,11 @@ public:
 		: MediaSink(MediaSinkType::ImageFile, cv::haveImageWriter(imageFile) ? imageFile : throw std::runtime_error("No encoder for this image file: " + imageFile))
 		, frameSize(std::move(frameSize)) { }
 
-	ImageFileWriter(const ImageFileWriter&) = delete;
+	/*ImageFileWriter(const ImageFileWriter&) = delete;
 	ImageFileWriter(ImageFileWriter&&) = default;
 
 	ImageFileWriter& operator = (const ImageFileWriter&) = delete;
-	ImageFileWriter& operator = (ImageFileWriter&&) = default;
+	ImageFileWriter& operator = (ImageFileWriter&&) = default;*/
 
 	virtual void write(const cv::Mat& frame) override;
 
@@ -770,11 +770,11 @@ public:
 		: MediaSink(MediaSinkType::VideoFile, videoFile)
 		, writer(videoFile, cv::VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]), fps, std::move(frameSize), true) {	}
 
-	VideoFileWriter(const VideoFileWriter&) = delete;
+	/*VideoFileWriter(const VideoFileWriter&) = delete;
 	VideoFileWriter(VideoFileWriter&&) = default;
 
 	VideoFileWriter& operator = (const VideoFileWriter&) = delete;
-	VideoFileWriter& operator = (VideoFileWriter&&) = default;
+	VideoFileWriter& operator = (VideoFileWriter&&) = default;*/
 
 	virtual void write(const cv::Mat& frame) override;
 
@@ -793,7 +793,7 @@ class MediaFactory
 {
 public:
 	static std::unique_ptr<MediaSource> createReader(const std::string& input, bool loop = false);
-	static std::unique_ptr<MediaSink> createWriter(const std::string& output, cv::Size frameSize);
+	static std::unique_ptr<MediaSink> createWriter(const std::string& output, cv::Size frameSize, double fps);
 
 private:
 	static const std::set<std::string> images;
@@ -866,7 +866,7 @@ std::unique_ptr<MediaSource> MediaFactory::createReader(const std::string& input
 }	// createReader
 
 
-std::unique_ptr<MediaSink> MediaFactory::createWriter(const std::string& output, cv::Size frameSize)
+std::unique_ptr<MediaSink> MediaFactory::createWriter(const std::string& output, cv::Size frameSize, double fps)
 {
 	if (output.empty())
 		return std::make_unique<DummyWriter>();
@@ -876,7 +876,7 @@ std::unique_ptr<MediaSink> MediaFactory::createWriter(const std::string& output,
 		return std::make_unique<ImageFileWriter>(output, frameSize);
 	else if (video.find(ext) != video.end())
 		// Help the compiler to deduce the argument types which are passed to the constructor
-		return std::make_unique<VideoFileWriter, const std::string&, cv::Size, const char(&)[4], double>(output, std::move(frameSize), { 'm','p','4','v' }, 30);
+		return std::make_unique<VideoFileWriter, const std::string&, cv::Size, const char(&)[4], double>(output, std::move(frameSize), { 'm','p','4','v' }, std::move(fps));
 	else
 	{
 		// TODO: consider adding other sinks
@@ -950,65 +950,24 @@ int main(int argc, char* argv[])
 		}
 
 		auto reader = MediaFactory::createReader(input);
-				
-		{
-			auto writer = MediaFactory::createWriter("z:/my.mp4", reader->getFrameSize());	// TEST!
-			cv::Mat tmp;
-			reader->readNext(tmp);
-			writer->write(tmp);
-		}
-
-		auto webcamReader = MediaFactory::createReader("cAm");
-		//SunglassesFilter filter("./images/sunglass.png");
-		//auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml");
-		HaarDetector one("./haarcascades/haarcascade_frontalface_default.xml");
-		auto two = one.clone();
-		auto three = HaarDetector("./haarcascades/haarcascade_frontalface_default.xml").clone();
-		/*const*/ HaarDetector&& crv = HaarDetector("./haarcascades/haarcascade_frontalface_default.xml");
-		auto four = std::move(crv).clone();		
-		//auto another = faceDetector;
-		auto eyeDetector = std::make_unique<ProportionalEyeDetector>();
-		//ProportionalEyeDetector another = *eyeDetector;
-		//ProportionalEyeDetector one;
-		//one = *eyeDetector;
-		std::unique_ptr<AbstractDetector> anotherptr = eyeDetector->clone();
-		//auto eyeDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml");
-		SunglassesFilter filter("./images/sunglass.png", "./images/lake.jpg", 0.5f, 0.4f, std::move(eyeDetector));
-		{
-			auto anotherfilter = filter.clone();
-			auto thirdfilter = std::move(*anotherfilter).clone();
-			//auto thirdfilter = std::move(anotherfilter);
-			//std::unique_ptr<AbstractImageFilter> thirdfilter(anotherfilter.get());
-		}
-
-		cv::Mat imInput = cv::imread("./images/musk.jpg", cv::IMREAD_COLOR);
-		//cv::Mat imGlasses = cv::imread("./images/sunglass.png", cv::IMREAD_UNCHANGED);
-		//CV_Assert(imGlasses.channels() == 4);
-
-		cv::imshow("input", imInput);
-		cv::waitKey();
-
-		cv::Mat imOut = filter.apply(imInput);
-		cv::imshow("output", imOut);
-		cv::waitKey();
+		auto writer = MediaFactory::createWriter(output, reader->getFrameSize(), 10);
 		
-		while (webcamReader->readNext(imInput))
+		auto faceDetector = std::make_unique<HaarDetector>("./haarcascades/haarcascade_frontalface_default.xml", faceScaleFactor, faceMinNeighbors);
+		auto eyeDetector = useHaarEyeDetector ? std::make_unique<HaarDetector>("./haarcascades/haarcascade_eye.xml", eyeScaleFactor, eyeMinNeighbors)
+											  : std::unique_ptr<AbstractDetector>(new ProportionalEyeDetector);
+				
+		SunglassesFilter filter(sunglassesFile, reflectionFile, opacity, reflectivity, std::move(eyeDetector), std::move(faceDetector));
+						
+		cv::Mat frame;
+		while (reader->readNext(frame))
 		{
-			cv::imshow("input", imInput);
-			cv::waitKey(10);
+			filter.applyInPlace(frame);
+			cv::imshow("Glassify", frame);
+			writer->write(frame);
+			int key = cv::waitKey(reader->getMediaType() == MediaSourceType::ImageFile ? 0 : 10);
+			if ((key & 0xFF) == 27)
+				break;
 		}
-
-		//cv::VideoCapture cap(0);
-		//while (cap.isOpened())
-		//{
-		//	cv::Mat frame;
-		//	cap >> frame;
-		//	//cv::imshow("input", imInput);
-		//	//cv::waitKey();
-		//	cv::Mat out = filter.apply(frame);
-		//	cv::imshow("test", out);
-		//	cv::waitKey(10);
-		//}
 
 		cv::destroyAllWindows();
 
