@@ -336,10 +336,8 @@ void SunglassesFilter::applyInPlace(cv::Mat& image) const
 	std::vector<cv::Mat> faces;
 	this->faceDetector->detect(image, faces);
 
-	for (/*const*/ cv::Mat& face : faces)
+	for (cv::Mat& face : faces)
 	{
-		cv::rectangle(face, cv::Rect(0, 0, face.cols-1, face.rows-1), cv::Scalar(0,0,255));
-
 		std::vector<cv::Rect> eyeRects;
 		this->eyeDetector->detect(face, eyeRects);
 
@@ -509,12 +507,7 @@ class ImageFileReader : public MediaSource
 {
 public:
 	ImageFileReader(const std::string& imageFile, bool looped = false);
-	/*ImageFileReader(const ImageFileReader&) = delete;
-	ImageFileReader(ImageFileReader&& other) = default;
-
-	ImageFileReader& operator = (const ImageFileReader&) = delete;
-	ImageFileReader& operator = (ImageFileReader&& other) = default;*/
-
+	
 	virtual cv::Size getFrameSize() const;
 
 	bool readNext(cv::Mat& frame) override;
@@ -577,12 +570,7 @@ class VideoFileReader : public MediaSource
 {
 public:
 	VideoFileReader(const std::string& videoFile, bool looped = false);
-	/*VideoFileReader(const VideoFileReader&) = delete;
-	VideoFileReader(VideoFileReader&& other) = default;
-
-	VideoFileReader& operator = (const VideoFileReader&) = delete;
-	VideoFileReader& operator = (VideoFileReader&& other) = default;*/
-
+	
 	cv::Size getFrameSize() const;
 
 	virtual bool readNext(cv::Mat& frame) override;
@@ -644,12 +632,6 @@ public:
 	{
 		CV_Assert(this->cap.isOpened());
 	}
-
-	/*WebcamReader(const WebcamReader& other) = delete;
-	WebcamReader(WebcamReader&& other) = default;
-
-	WebcamReader& operator = (const WebcamReader& other) = delete;
-	WebcamReader& operator = (WebcamReader&& other) = default;*/
 
 	cv::Size getFrameSize() const;
 
@@ -724,12 +706,7 @@ class DummyWriter : public MediaSink
 {
 public:
 	DummyWriter() : MediaSink(MediaSinkType::Dummy, "") {}
-	/*DummyWriter(const DummyWriter&) = default;
-	DummyWriter(DummyWriter&&) = default;
-
-	DummyWriter& operator = (const DummyWriter&) = default;
-	DummyWriter& operator = (DummyWriter&&) = default;*/
-
+	
 	virtual void write(const cv::Mat& frame) override { }
 };	// DummyWriter
 
@@ -740,12 +717,6 @@ public:
 	ImageFileWriter(const std::string& imageFile, cv::Size frameSize)
 		: MediaSink(MediaSinkType::ImageFile, cv::haveImageWriter(imageFile) ? imageFile : throw std::runtime_error("No encoder for this image file: " + imageFile))
 		, frameSize(std::move(frameSize)) { }
-
-	/*ImageFileWriter(const ImageFileWriter&) = delete;
-	ImageFileWriter(ImageFileWriter&&) = default;
-
-	ImageFileWriter& operator = (const ImageFileWriter&) = delete;
-	ImageFileWriter& operator = (ImageFileWriter&&) = default;*/
 
 	virtual void write(const cv::Mat& frame) override;
 
@@ -769,12 +740,6 @@ public:
 	VideoFileWriter(const std::string& videoFile, cv::Size frameSize, const char(&fourcc)[4], double fps)
 		: MediaSink(MediaSinkType::VideoFile, videoFile)
 		, writer(videoFile, cv::VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]), fps, std::move(frameSize), true) {	}
-
-	/*VideoFileWriter(const VideoFileWriter&) = delete;
-	VideoFileWriter(VideoFileWriter&&) = default;
-
-	VideoFileWriter& operator = (const VideoFileWriter&) = delete;
-	VideoFileWriter& operator = (VideoFileWriter&&) = default;*/
 
 	virtual void write(const cv::Mat& frame) override;
 
@@ -812,8 +777,6 @@ const std::set<std::string> MediaFactory::video{ ".mp4", ".avi" };
 
 std::string MediaFactory::getFileExtension(const std::string& fileName)
 {
-	//std::string ext = std::filesystem::path(fileName).extension().string();
-	//std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
 	return std::filesystem::path(fileName).extension().string();
 }
 
@@ -843,11 +806,7 @@ int MediaFactory::getWebCamIndex(const std::string& input)
 }
 
 std::unique_ptr<MediaSource> MediaFactory::createReader(const std::string& input, bool loop)
-{
-	/*std::string inputLC;
-	inputLC.reserve(input.size());
-	std::transform(input.begin(), input.end(), std::back_inserter(inputLC), [](char c) { return std::tolower(c); });*/
-	
+{	
 	std::string ext = getFileExtension(input);
 	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
 
@@ -889,8 +848,8 @@ std::unique_ptr<MediaSink> MediaFactory::createWriter(const std::string& output,
 void printUsage()
 {
 	std::cout << "Usage: glassify.exe [-h]"
-				 " [--sunglasses=<sunglasses image file>]" 
-				 " [--reflection=<reflection image file>]"
+				 " --sunglasses=<sunglasses image file>" 
+				 " --reflection=<reflection image file>"
 				 " [--input=<input image, video, or a webcam>]"
 				 " [--output=<output file>]"
 				 " [--opacity=<the opacity of the sunglasses (0..1)>]"
@@ -909,8 +868,8 @@ int main(int argc, char* argv[])
 		
 		static const cv::String keys =
 			"{help h usage ?        |                     | Print the help message  }"			
-			"{sunglasses            |./images/sunglass.png| The image of sunglasses to overlay with the input }"
-			"{reflection            |./images/lake.jpg    | The reflection image for sunglasses }"
+			"{sunglasses            |<none>               | The image of sunglasses to overlay with the input }"
+			"{reflection            |<none>               | The reflection image for sunglasses }"
 			"{input                 |cam:0                | The input image, video, or a webcam  }"
 			"{output                |                     | If not empty, specifies the output file }"
 			"{opacity               |0.5                  | The opacity of the sunglasses (0..1) }"
