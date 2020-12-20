@@ -28,3 +28,11 @@ if(MSVC)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
   set_property(TARGET glassify PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 endif()
+
+
+# Copy haarcascades to the output directory
+add_custom_command(TARGET glassify
+                   POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   "${PROJECT_SOURCE_DIR}/haarcascades"
+                   "$<TARGET_FILE_DIR:glassify>/haarcascades")
