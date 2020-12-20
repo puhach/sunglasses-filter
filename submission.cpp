@@ -248,6 +248,18 @@ public:
 
 	~SunglassesFilter() = default;
 
+	float getOpacity() const noexcept { return this->opacity; }
+	void setOpacity(float opacity) noexcept { this->opacity = opacity; }
+
+	float getReflectivity() const noexcept { return this->reflectivity; }
+	void setReflectivity(float reflectivity) noexcept { this->reflectivity = reflectivity; }
+
+	//AbstractDetector* getEyeDetector() const noexcept { return this->eyeDetector.get(); }
+	void setEyeDetector(std::unique_ptr<AbstractDetector> eyeDetector) noexcept { this->eyeDetector = std::move(eyeDetector); }
+
+	//AbstractDetector* getFaceDetector() const noexcept { return this->faceDetector.get(); }
+	void setFaceDetector(std::unique_ptr<AbstractDetector> faceDetector) noexcept { this->faceDetector = std::move(faceDetector); }
+
 	virtual void applyInPlace(cv::Mat& image) override;
 
 	virtual std::unique_ptr<AbstractImageFilter> clone() const& override;
