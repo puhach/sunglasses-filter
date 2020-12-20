@@ -203,10 +203,10 @@ class AbstractImageFilter
 public:
 	virtual ~AbstractImageFilter() = default;
 
-	cv::Mat apply(const cv::Mat& image);	// always allocates a new matrix to store the output
-	void apply(const cv::Mat& image, cv::Mat& out);		// may be useful if the output matrix of the matching type has already been allocated
+	cv::Mat apply(const cv::Mat& image) const;	// always allocates a new matrix to store the output
+	void apply(const cv::Mat& image, cv::Mat& out) const;	// may be useful if the output matrix of the matching type has already been allocated
 
-	virtual void applyInPlace(cv::Mat& image) = 0;	// stores the result into the same matrix as the input
+	virtual void applyInPlace(cv::Mat& image) const = 0;	// stores the result into the same matrix as the input
 
 	// C.67: A base class should suppress copying, and provide a virtual clone instead if "copying" is desired
 	virtual std::unique_ptr<AbstractImageFilter> clone() const & = 0;
@@ -224,14 +224,14 @@ protected:
 };	// AbstractImageFilter
 
 
-cv::Mat AbstractImageFilter::apply(const cv::Mat& image)
+cv::Mat AbstractImageFilter::apply(const cv::Mat& image) const
 {
 	cv::Mat imageCopy = image.clone();
 	applyInPlace(imageCopy);	// virtual call
 	return imageCopy;
 }
 
-void AbstractImageFilter::apply(const cv::Mat& image, cv::Mat& out)
+void AbstractImageFilter::apply(const cv::Mat& image, cv::Mat& out) const
 {
 	image.copyTo(out);
 	applyInPlace(out);
@@ -260,7 +260,7 @@ public:
 	//AbstractDetector* getFaceDetector() const noexcept { return this->faceDetector.get(); }
 	void setFaceDetector(std::unique_ptr<AbstractDetector> faceDetector) noexcept { this->faceDetector = std::move(faceDetector); }
 
-	virtual void applyInPlace(cv::Mat& image) override;
+	virtual void applyInPlace(cv::Mat& image) const override;
 
 	virtual std::unique_ptr<AbstractImageFilter> clone() const& override;
 	virtual std::unique_ptr<AbstractImageFilter> clone() && override;	
@@ -271,7 +271,7 @@ protected:
 
 private:
 
-	void fitSunglasses(cv::Mat &face, const cv::Rect &eyeRegion);
+	void fitSunglasses(cv::Mat &face, const cv::Rect &eyeRegion) const;
 
 	std::unique_ptr<AbstractDetector> eyeDetector, faceDetector;
 	float opacity, reflectivity;
@@ -331,7 +331,7 @@ std::unique_ptr<AbstractImageFilter> SunglassesFilter::clone()&&
 	return std::unique_ptr<SunglassesFilter>(new SunglassesFilter(std::move(*this)));
 }
 
-void SunglassesFilter::applyInPlace(cv::Mat& image)
+void SunglassesFilter::applyInPlace(cv::Mat& image) const
 {
 	std::vector<cv::Mat> faces;
 	this->faceDetector->detect(image, faces);
@@ -360,7 +360,7 @@ void SunglassesFilter::applyInPlace(cv::Mat& image)
 	}	// faces
 }	// applyInPlace
 
-void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion)
+void SunglassesFilter::fitSunglasses(cv::Mat& face, const cv::Rect& eyeRegion) const
 {
 	CV_Assert(face.channels() == 3);
 	CV_Assert(eyeRegion.width <= face.cols && eyeRegion.height <= face.rows);
