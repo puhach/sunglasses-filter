@@ -477,6 +477,8 @@ public:
 
 	bool isLooped() const noexcept { return this->looped; }
 
+	virtual cv::Size getFrameSize() const = 0;
+
 	virtual bool readNext(cv::Mat& frame) = 0;
 
 	virtual void reset() = 0;
@@ -513,11 +515,14 @@ public:
 	ImageFileReader& operator = (const ImageFileReader&) = delete;
 	ImageFileReader& operator = (ImageFileReader&& other) = default;
 
+	virtual cv::Size getFrameSize() const;
+
 	bool readNext(cv::Mat& frame) override;
+	
 	void reset() override;
 
 private:
-	cv::Mat cache;
+	mutable cv::Mat cache;
 };	// ImageFileReader
 
 ImageFileReader::ImageFileReader(const std::string& imageFile, bool looped)
@@ -526,6 +531,19 @@ ImageFileReader::ImageFileReader(const std::string& imageFile, bool looped)
 	if (!cv::haveImageReader(imageFile))
 		throw std::runtime_error("No decoder for this image file: " + imageFile);
 }	// ctor
+
+cv::Size ImageFileReader::getFrameSize() const
+{
+	if (this->cache.empty())
+	{
+		cv::Mat frame = cv::imread(getMediaPath(), cv::IMREAD_UNCHANGED);
+		return frame.size();
+	}
+	else // it has already been read
+	{
+		return this->cache.size();
+	}
+}	// getFrameSize
 
 bool ImageFileReader::readNext(cv::Mat& frame)
 {
@@ -565,6 +583,8 @@ public:
 	VideoFileReader& operator = (const VideoFileReader&) = delete;
 	VideoFileReader& operator = (VideoFileReader&& other) = default;
 
+	cv::Size getFrameSize() const;
+
 	virtual bool readNext(cv::Mat& frame) override;
 
 	virtual void reset() override;
@@ -581,6 +601,13 @@ VideoFileReader::VideoFileReader(const std::string& videoFile, bool looped)
 	, cap(videoFile)
 {
 	CV_Assert(cap.isOpened());
+}
+
+cv::Size VideoFileReader::getFrameSize() const
+{
+	int w = static_cast<int>(this->cap.get(cv::CAP_PROP_FRAME_WIDTH));
+	int h = static_cast<int>(this->cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+	return w>0 && h>0 ? cv::Size(w, h) : throw std::runtime_error("Failed to get the size of the video frame.");
 }
 
 bool VideoFileReader::readNext(cv::Mat& frame)
@@ -624,6 +651,8 @@ public:
 	WebcamReader& operator = (const WebcamReader& other) = delete;
 	WebcamReader& operator = (WebcamReader&& other) = default;
 
+	cv::Size getFrameSize() const;
+
 	virtual bool readNext(cv::Mat& frame) override;
 
 	virtual void reset() override;
@@ -632,6 +661,13 @@ private:
 	cv::VideoCapture cap;
 	int cameraId;
 };	// WebcamReader
+
+cv::Size WebcamReader::getFrameSize() const
+{
+	int w = static_cast<int>(this->cap.get(cv::CAP_PROP_FRAME_WIDTH));
+	int h = static_cast<int>(this->cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+	return w > 0 && h > 0 ? cv::Size(w, h) : throw std::runtime_error("Failed to get the size of the webcam frame.");
+}
 
 bool WebcamReader::readNext(cv::Mat& frame)
 {
@@ -913,6 +949,14 @@ int main(int argc, char* argv[])
 			return -1;
 		}
 
+		auto reader = MediaFactory::createReader(input);
+				
+		{
+			auto writer = MediaFactory::createWriter("z:/my.mp4", reader->getFrameSize());	// TEST!
+			cv::Mat tmp;
+			reader->readNext(tmp);
+			writer->write(tmp);
+		}
 
 		auto webcamReader = MediaFactory::createReader("cAm");
 		//SunglassesFilter filter("./images/sunglass.png");
