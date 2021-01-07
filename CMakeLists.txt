@@ -21,7 +21,34 @@ find_package( OpenCV REQUIRED )
 
 include_directories( ${OpenCV_INCLUDE_DIRS})
 
-add_executable(glassify submission.cpp)
+add_executable(glassify 
+	main.cpp 
+	abstractdetector.h 
+	abstractdetector.cpp 
+	haardetector.h 
+	haardetector.cpp 
+	proportionaleyedetector.h 
+	proportionaleyedetector.cpp 
+	abstractimagefilter.h 
+	abstractimagefilter.cpp 
+	sunglassesfilter.h 
+	sunglassesfilter.cpp 
+	mediafactory.h 
+	mediafactory.cpp 
+	mediasource.h 
+	mediasink.h 
+	imagefilereader.h 
+	imagefilereader.cpp 
+	imagefilewriter.h 
+	imagefilewriter.cpp 
+	videofilereader.h 
+	videofilereader.cpp 
+	videofilewriter.h 
+	videofilewriter.cpp 
+	webcamreader.h 
+	webcamreader.cpp 
+	dummywriter.h)
+
 target_link_libraries(glassify ${OpenCV_LIBS} )
   
 if(MSVC)
